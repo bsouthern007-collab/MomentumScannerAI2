@@ -7,12 +7,14 @@ import html
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote as url_quote
 
 import altair as alt
 import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 try:
     import plotly.graph_objects as go
@@ -28,6 +30,7 @@ except Exception:  # pragma: no cover - the app still works without yfinance
 
 
 APP_DIR = Path(__file__).resolve().parent
+APP_NAME = "Trading for Dummys 101"
 DATA_DIR = APP_DIR / "data"
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 JOURNAL_FILE = DATA_DIR / "trade_journal.csv"
@@ -40,6 +43,31 @@ SP500_SOURCE_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
 OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
 DEFAULT_MARKET_SCAN_BATCH = 80
+SYMBOL_ALIASES = {
+    "S&P500": "^GSPC",
+    "S&P 500": "^GSPC",
+    "SP500": "^GSPC",
+    "SPX": "^GSPC",
+    "GSPC": "^GSPC",
+    "NASDAQ": "^IXIC",
+    "NASDAQ COMPOSITE": "^IXIC",
+    "IXIC": "^IXIC",
+    "DOW": "^DJI",
+    "DOW JONES": "^DJI",
+    "DJIA": "^DJI",
+    "DJI": "^DJI",
+    "RUSSELL 2000": "^RUT",
+    "RUSSELL2000": "^RUT",
+    "RUT": "^RUT",
+    "VIX": "^VIX",
+}
+INDEX_PROFILES = {
+    "^GSPC": {"company": "S&P 500 Index", "sector": "Broad market index", "float_m": 0.0, "catalyst": "Broad US large-cap market movement"},
+    "^IXIC": {"company": "Nasdaq Composite Index", "sector": "Technology-heavy market index", "float_m": 0.0, "catalyst": "Broad Nasdaq market movement"},
+    "^DJI": {"company": "Dow Jones Industrial Average", "sector": "Blue-chip market index", "float_m": 0.0, "catalyst": "Broad Dow market movement"},
+    "^RUT": {"company": "Russell 2000 Index", "sector": "Small-cap market index", "float_m": 0.0, "catalyst": "Broad small-cap market movement"},
+    "^VIX": {"company": "CBOE Volatility Index", "sector": "Volatility index", "float_m": 0.0, "catalyst": "Market volatility movement"},
+}
 DATA_DIR.mkdir(exist_ok=True)
 YFINANCE_CACHE_DIR.mkdir(exist_ok=True)
 
@@ -412,6 +440,140 @@ def catalyst_score(news: list[dict[str, Any]]) -> tuple[str, str]:
     return "Unclear catalyst", "gray"
 
 
+NEWS_IMPORTANCE: dict[str, int] = {
+    "Risk headline": 7,
+    "FDA/regulatory": 6,
+    "M&A": 6,
+    "Earnings": 5,
+    "Contract": 5,
+    "Analyst": 3,
+    "Sector": 2,
+}
+
+
+def news_age_hours(item: dict[str, Any]) -> float:
+    published = safe_float(item.get("datetime"))
+    if published is None:
+        return 999.0
+    if published > 10_000_000_000:
+        published = published / 1000
+    try:
+        return max((datetime.now() - datetime.fromtimestamp(float(published))).total_seconds() / 3600, 0)
+    except Exception:
+        return 999.0
+
+
+def news_impact_score(item: dict[str, Any]) -> int:
+    headline = str(item.get("headline") or "")
+    summary = str(item.get("summary") or "")
+    text = f"{headline} {summary}".lower()
+    tags = catalyst_tags(headline, summary)
+    score = sum(NEWS_IMPORTANCE.get(tag, 1) for tag in tags)
+    if any(word in text for word in ("announces", "wins", "launches", "surges", "approval", "raises", "beats")):
+        score += 2
+    if any(word in text for word in ("offering", "halt", "investigation", "bankruptcy", "delisting")):
+        score += 3
+
+    age = news_age_hours(item)
+    if age <= 2:
+        score += 4
+    elif age <= 6:
+        score += 3
+    elif age <= 24:
+        score += 2
+    elif age <= 72:
+        score += 1
+    return score
+
+
+def news_related_symbol(item: dict[str, Any]) -> str:
+    for field in ("_symbol", "symbol", "related"):
+        value = str(item.get(field) or "").strip()
+        if not value:
+            continue
+        parts = [part for chunk in value.replace(";", ",").split(",") for part in chunk.split() if part]
+        if parts:
+            return normalize_user_symbol(parts[0])
+    return "Market"
+
+
+@st.cache_data(ttl=300, max_entries=30, show_spinner=False)
+def biggest_stock_news(symbols: tuple[str, ...], api_marker: str, limit: int = 8) -> list[dict[str, Any]]:
+    if api_marker == "no-key":
+        return []
+
+    cleaned_symbols = tuple(unique_symbols([normalize_user_symbol(symbol) for symbol in symbols if normalize_user_symbol(symbol)]))
+    items: list[dict[str, Any]] = []
+
+    for item in finnhub_market_news("general", limit=20):
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        row["_symbol"] = news_related_symbol(row)
+        row["_feed"] = "Market"
+        row["_score"] = news_impact_score(row)
+        items.append(row)
+
+    for symbol in cleaned_symbols[:12]:
+        for item in finnhub_company_news(symbol, days=3, limit=3):
+            if not isinstance(item, dict):
+                continue
+            row = dict(item)
+            row["_symbol"] = symbol
+            row["_feed"] = "Stock"
+            row["_score"] = news_impact_score(row)
+            items.append(row)
+
+    unique_items: dict[str, dict[str, Any]] = {}
+    for item in items:
+        key = str(item.get("url") or item.get("headline") or item.get("id") or "")
+        if not key:
+            continue
+        if key not in unique_items or int(item.get("_score", 0)) > int(unique_items[key].get("_score", 0)):
+            unique_items[key] = item
+
+    return sorted(
+        unique_items.values(),
+        key=lambda item: (int(item.get("_score", 0)), safe_float(item.get("datetime"), 0) or 0),
+        reverse=True,
+    )[:limit]
+
+
+def render_big_news_rail(symbols: tuple[str, ...]) -> None:
+    with st.container(border=True):
+        st.markdown("**Biggest news dropped**")
+        st.caption("Ranks fresh headlines by catalyst strength, risk, and recency.")
+        if not finnhub_enabled():
+            st.info("Add your free Finnhub key to turn on ranked stock news.", icon=":material/key:")
+            return
+
+        news = biggest_stock_news(symbols, finnhub_key_marker(), limit=8)
+        if not news:
+            st.caption("No high-impact stock news returned yet.")
+            return
+
+        for item in news:
+            headline = str(item.get("headline") or "Untitled news")
+            url = str(item.get("url") or "")
+            source = str(item.get("source") or "News")
+            symbol = news_related_symbol(item)
+            tags = catalyst_tags(headline, str(item.get("summary") or ""))
+            score = int(item.get("_score", 0))
+            with st.container(border=True):
+                with st.container(horizontal=True):
+                    st.badge(symbol, icon=":material/finance_chip:", color="blue")
+                    st.badge(f"Impact {score}", icon=":material/bolt:", color="red" if "Risk headline" in tags else "green" if score >= 8 else "orange")
+                if url:
+                    st.markdown(f"**[{headline}]({url})**")
+                else:
+                    st.markdown(f"**{headline}**")
+                if tags:
+                    with st.container(horizontal=True):
+                        for tag in tags[:3]:
+                            st.badge(tag, color="red" if tag == "Risk headline" else "blue")
+                st.caption(f"{source} | {timestamp_label(item.get('datetime'))}")
+
+
 def setup_check_items(analysis: dict[str, Any]) -> list[tuple[str, bool, str]]:
     price = safe_float(analysis.get("Price"))
     gain = safe_float(analysis.get("Daily gain %"), 0) or 0
@@ -442,11 +604,27 @@ def setup_completion(analysis: dict[str, Any]) -> tuple[int, int]:
     return sum(1 for _, passed, _ in checks if passed), len(checks)
 
 
+def normalize_user_symbol(symbol: Any) -> str:
+    raw = str(symbol or "").strip().upper().replace("$", "")
+    raw = " ".join(raw.split())
+    if not raw:
+        return ""
+    if raw in SYMBOL_ALIASES:
+        return SYMBOL_ALIASES[raw]
+
+    compact = raw.replace(" ", "").replace(".", "")
+    if compact in SYMBOL_ALIASES:
+        return SYMBOL_ALIASES[compact]
+
+    cleaned = raw.replace(".", "-").replace("/", "-")
+    return SYMBOL_ALIASES.get(cleaned, cleaned)
+
+
 def clean_market_symbol(symbol: Any) -> str:
-    clean = str(symbol or "").strip().upper().replace(".", "-").replace("/", "-")
+    clean = normalize_user_symbol(symbol)
     if not clean or clean in {"N/A", "NAN", "NONE"}:
         return ""
-    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-^")
     if any(char not in allowed for char in clean):
         return ""
     excluded_suffixes = ("-W", "-WS", "-WT", "-U", "-R", "-RT", "-PR", "-P")
@@ -584,13 +762,13 @@ def parse_symbol_directory(text: str, symbol_column: str, include_etfs: bool = T
 def nasdaqtrader_symbols(include_etfs: bool = True) -> list[str]:
     symbols: list[str] = []
     try:
-        response = requests.get(NASDAQ_LISTED_URL, headers={"User-Agent": "Mozilla/5.0 MomentumScannerAI"}, timeout=10)
+        response = requests.get(NASDAQ_LISTED_URL, headers={"User-Agent": f"Mozilla/5.0 {APP_NAME}"}, timeout=10)
         response.raise_for_status()
         symbols.extend(parse_symbol_directory(response.text, "Symbol", include_etfs=include_etfs))
     except Exception:
         pass
     try:
-        response = requests.get(OTHER_LISTED_URL, headers={"User-Agent": "Mozilla/5.0 MomentumScannerAI"}, timeout=10)
+        response = requests.get(OTHER_LISTED_URL, headers={"User-Agent": f"Mozilla/5.0 {APP_NAME}"}, timeout=10)
         response.raise_for_status()
         symbols.extend(parse_symbol_directory(response.text, "ACT Symbol", include_etfs=include_etfs))
     except Exception:
@@ -614,9 +792,24 @@ def ticker_seed(ticker: str) -> int:
 
 
 def profile_for(ticker: str) -> dict[str, Any]:
-    ticker = ticker.strip().upper()
+    ticker = normalize_user_symbol(ticker)
     if ticker in PROFILE_BY_TICKER:
         return dict(PROFILE_BY_TICKER[ticker])
+    if ticker in INDEX_PROFILES:
+        profile = INDEX_PROFILES[ticker]
+        return {
+            "ticker": ticker,
+            "company": profile["company"],
+            "sector": profile["sector"],
+            "price": 5000.0,
+            "prev_close": 4980.0,
+            "daily_gain_pct": 0.4,
+            "volume": 1_000_000,
+            "avg_volume": 1_000_000,
+            "rvol": 1.0,
+            "float_m": 999999.0,
+            "catalyst": profile["catalyst"],
+        }
 
     seed = ticker_seed(ticker)
     rng = np.random.default_rng(seed)
@@ -633,7 +826,7 @@ def profile_for(ticker: str) -> dict[str, Any]:
         "float_m": float_m,
         "rvol": rvol,
         "volume": int(rng.uniform(4_000_000, 55_000_000)),
-        "catalyst": "Custom ticker. Verify live float, news, and volume.",
+        "catalyst": "Custom stock. Verify live float, news, and volume.",
     }
 
 
@@ -722,15 +915,16 @@ def learning_history(ticker: str, days: int) -> pd.DataFrame:
 
 
 def yahoo_chart_api_history(ticker: str, period: str, interval: str, prepost: bool = True) -> pd.DataFrame:
+    ticker = normalize_user_symbol(ticker)
     response = requests.get(
-        YAHOO_CHART_URL.format(ticker=ticker),
+        YAHOO_CHART_URL.format(ticker=url_quote(ticker, safe="")),
         params={
             "range": period,
             "interval": interval,
             "includePrePost": str(bool(prepost)).lower(),
             "events": "div,splits",
         },
-        headers={"User-Agent": "Mozilla/5.0 MomentumScannerAI"},
+        headers={"User-Agent": f"Mozilla/5.0 {APP_NAME}"},
         timeout=10,
     )
     response.raise_for_status()
@@ -767,7 +961,7 @@ def load_history(
     prefer_live: bool = False,
     prepost: bool = True,
 ) -> tuple[pd.DataFrame, str]:
-    ticker = ticker.strip().upper()
+    ticker = normalize_user_symbol(ticker)
     if prefer_live:
         try:
             df = yahoo_chart_api_history(ticker, period=period, interval=interval, prepost=prepost)
@@ -847,6 +1041,7 @@ def quote_to_stats(quote: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def finnhub_quote_to_stats(ticker: str, quote: dict[str, Any]) -> dict[str, Any] | None:
+    ticker = normalize_user_symbol(ticker)
     price = safe_float(quote.get("c"))
     prev = safe_float(quote.get("pc"))
     if price is None:
@@ -859,7 +1054,7 @@ def finnhub_quote_to_stats(ticker: str, quote: dict[str, Any]) -> dict[str, Any]
     volume = safe_float(quote.get("v"), profile["volume"]) or profile["volume"]
     avg_volume = max(float(profile["volume"]) / max(float(profile["rvol"]), 1.1), 1)
     return {
-        "Ticker": ticker.strip().upper(),
+        "Ticker": ticker,
         "Company": profile["company"],
         "Sector": profile["sector"],
         "Price": price,
@@ -880,7 +1075,7 @@ def finnhub_quote_to_stats(ticker: str, quote: dict[str, Any]) -> dict[str, Any]
 
 @st.cache_data(ttl=20, max_entries=150, show_spinner=False)
 def finnhub_quote_stats(ticker: str) -> dict[str, Any] | None:
-    ticker = ticker.strip().upper()
+    ticker = normalize_user_symbol(ticker)
     if not ticker:
         return None
     try:
@@ -894,7 +1089,7 @@ def finnhub_quote_stats(ticker: str) -> dict[str, Any] | None:
 
 @st.cache_data(ttl=300, max_entries=300, show_spinner=False)
 def finnhub_company_news(ticker: str, days: int = 3, limit: int = 5) -> list[dict[str, Any]]:
-    ticker = ticker.strip().upper()
+    ticker = normalize_user_symbol(ticker)
     if not ticker:
         return []
     end = date.today()
@@ -956,6 +1151,7 @@ def render_news_items(news: list[dict[str, Any]], empty_message: str = "No Finnh
 
 @st.cache_data(ttl=20, max_entries=40, show_spinner=False)
 def live_quote_stats(ticker: str) -> dict[str, Any] | None:
+    ticker = normalize_user_symbol(ticker)
     finnhub_stats = finnhub_quote_stats(ticker)
     if finnhub_stats:
         return finnhub_stats
@@ -963,7 +1159,6 @@ def live_quote_stats(ticker: str) -> dict[str, Any] | None:
     if yf is None:
         return None
 
-    ticker = ticker.strip().upper()
     try:
         yf.set_tz_cache_location(str(YFINANCE_CACHE_DIR))
         stock = yf.Ticker(ticker)
@@ -1057,7 +1252,7 @@ def latest_market_stats(
     rvol = volume / max(avg_volume, 1)
 
     return {
-        "Ticker": ticker.strip().upper(),
+        "Ticker": normalize_user_symbol(ticker),
         "Company": profile["company"],
         "Sector": profile["sector"],
         "Price": close,
@@ -1183,7 +1378,7 @@ def analyze_ticker(
     interval: str = "1d",
     prefer_live: bool = False,
 ) -> dict[str, Any]:
-    ticker = ticker.strip().upper()
+    ticker = normalize_user_symbol(ticker)
     history, source = load_history(ticker, period=period, interval=interval, prefer_live=prefer_live)
     live_stats = live_quote_stats(ticker) if prefer_live else None
     stats = latest_market_stats(ticker, history, source, live_stats=live_stats)
@@ -1290,7 +1485,7 @@ def sp500_tickers() -> list[str]:
     try:
         from bs4 import BeautifulSoup
 
-        response = requests.get(SP500_SOURCE_URL, headers={"User-Agent": "Mozilla/5.0 MomentumScannerAI"}, timeout=10)
+        response = requests.get(SP500_SOURCE_URL, headers={"User-Agent": f"Mozilla/5.0 {APP_NAME}"}, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
         table = soup.find("table", {"id": "constituents"})
@@ -1429,7 +1624,7 @@ def remember_selected_ticker(display_df: pd.DataFrame, event: Any) -> None:
     ticker = str(display_df.iloc[rows[0]]["Ticker"]).upper()
     if ticker:
         st.session_state.selected_ticker = ticker
-        st.caption(f"{ticker} selected for Charts and AI Coach.")
+        st.caption(f"{ticker} stock selected for Charts and AI Coach.")
 
 
 def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
@@ -1445,7 +1640,7 @@ def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Ticker": st.column_config.TextColumn("Ticker", pinned=True),
+            "Ticker": st.column_config.TextColumn("Stock", pinned=True),
             "Playbook fit": st.column_config.TextColumn("Fit"),
             "Status": st.column_config.TextColumn("Status"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
@@ -1489,7 +1684,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Ticker": st.column_config.TextColumn("Ticker", pinned=True),
+            "Ticker": st.column_config.TextColumn("Stock", pinned=True),
             "Playbook fit": st.column_config.TextColumn("Fit"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
             "Daily gain %": st.column_config.NumberColumn("Gain", format="%.2f%%"),
@@ -1522,14 +1717,14 @@ def read_watchlist() -> list[str]:
     if WATCHLIST_FILE.exists():
         try:
             data = json.loads(WATCHLIST_FILE.read_text(encoding="utf-8"))
-            return sorted({str(item).strip().upper() for item in data if str(item).strip()})
+            return sorted({clean for item in data if (clean := normalize_user_symbol(item))})
         except Exception:
             pass
     return ["BBAI", "KULR", "LUNR", "SOUN"]
 
 
 def write_watchlist(tickers: list[str]) -> None:
-    clean = sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()})
+    clean = sorted({clean_ticker for ticker in tickers if (clean_ticker := normalize_user_symbol(ticker))})
     WATCHLIST_FILE.write_text(json.dumps(clean, indent=2), encoding="utf-8")
 
 
@@ -1750,11 +1945,12 @@ def theme_palette(mode: str | None = None) -> dict[str, str]:
             "violet": "#7C3AED",
             "orange": "#B45309",
             "grid": "#DDE5EE",
+            "chart_grid": "rgba(148, 163, 184, 0.24)",
         }
     return {
         "app_bg": "#090C10",
-        "panel": "#111820",
-        "panel_alt": "#0F151D",
+        "panel": "#0B1117",
+        "panel_alt": "#101821",
         "border": "#293546",
         "text": "#F3F7FA",
         "muted": "#B7C2D0",
@@ -1769,6 +1965,7 @@ def theme_palette(mode: str | None = None) -> dict[str, str]:
         "violet": "#A78BFA",
         "orange": "#F59E0B",
         "grid": "#223041",
+        "chart_grid": "rgba(148, 163, 184, 0.13)",
     }
 
 
@@ -1875,9 +2072,9 @@ def apply_style(mode: str | None = None) -> None:
 
 def dashboard_hero() -> None:
     st.markdown(
-        """
+        f"""
         <div class="msa-hero">
-            <h1>MomentumScannerAI</h1>
+            <h1>{html.escape(APP_NAME)}</h1>
             <p>Live scanners, chart levels, stock news, paper-trade planning, and a learning system for studying momentum without guessing.</p>
         </div>
         """,
@@ -2042,6 +2239,7 @@ def wait_coaching(analysis: dict[str, Any], label: str) -> list[str]:
 def render_ai_decision_panel(analysis: dict[str, Any]) -> None:
     label, message = ai_action_summary(analysis)
     status = live_status(analysis)
+    levels = chart_trade_levels(analysis)
     color = "gray"
     if label == "Plan invalid":
         color = "red"
@@ -2052,13 +2250,625 @@ def render_ai_decision_panel(analysis: dict[str, Any]) -> None:
     elif status in {"Near buy zone", "Momentum active"}:
         color = "orange"
     with st.container(border=True):
-        st.badge(label, icon=":material/psychology:", color=color)
+        st.markdown("**AI helper**")
+        with st.container(horizontal=True):
+            st.badge(label, icon=":material/psychology:", color=color)
+            st.badge(status, icon=":material/candlestick_chart:", color=color)
+            st.badge("Paper-trade plan", icon=":material/edit_note:", color="blue")
+
+        level_cols = st.columns(4)
+        level_cols[0].metric(
+            "Entry point",
+            money(levels["entry"]),
+            "Buy only after trigger",
+            border=True,
+        )
+        level_cols[1].metric(
+            "Stop loss",
+            money(levels["stop"]),
+            "Idea is wrong here",
+            border=True,
+        )
+        level_cols[2].metric(
+            "Take profit",
+            money(levels["target_1"]),
+            "First trim target",
+            border=True,
+        )
+        level_cols[3].metric(
+            "Runner target",
+            money(levels["target_2"]),
+            "Second target",
+            border=True,
+        )
+
+        st.markdown("**What the AI is saying right now**")
         st.markdown(markdown_text(message))
         if label in {"Study only", "Watch only", "Plan invalid"}:
             st.markdown("**Best next action**")
             for item in wait_coaching(analysis, label):
                 st.write(f"- {item}")
         st.caption("This is a paper-trading decision aid. It does not execute orders and it is not financial advice.")
+
+
+def chart_trade_levels(analysis: dict[str, Any]) -> dict[str, float | None]:
+    buy_low = safe_float(analysis.get("Buy low"))
+    buy_high = safe_float(analysis.get("Buy high"))
+    buy_mid = None
+    if buy_low is not None and buy_high is not None:
+        buy_mid = (buy_low + buy_high) / 2
+    return {
+        "buy_low": buy_low,
+        "buy_high": buy_high,
+        "buy_mid": buy_mid,
+        "entry": safe_float(analysis.get("Entry trigger price")),
+        "stop": safe_float(analysis.get("Stop price")),
+        "target_1": safe_float(analysis.get("Target 1 price")),
+        "target_2": safe_float(analysis.get("Target 2 price")),
+    }
+
+
+def render_ai_chart_trade_map(analysis: dict[str, Any]) -> None:
+    levels = chart_trade_levels(analysis)
+    status = live_status(analysis)
+    label, _ = ai_action_summary(analysis)
+    with st.container(border=True):
+        st.markdown("**AI chart trade map**")
+        with st.container(horizontal=True):
+            st.badge(label, icon=":material/psychology:", color="green" if status in {"Breakout trigger", "In buy zone"} else "orange" if status in {"Near buy zone", "Momentum active"} else "gray")
+            st.badge(status, icon=":material/candlestick_chart:", color="green" if status in {"Breakout trigger", "In buy zone"} else "orange" if status == "Near buy zone" else "gray")
+            st.badge("Paper-trade only", icon=":material/edit_note:", color="blue")
+
+        cols = st.columns(4)
+        cols[0].metric("Watch buy area", analysis.get("Buy zone", "n/a"), border=True)
+        cols[1].metric("Buy only after", money(levels["entry"]), border=True)
+        cols[2].metric("Stop if wrong", money(levels["stop"]), border=True)
+        cols[3].metric("Sell / trim target", money(levels["target_1"]), border=True)
+        st.caption(
+            "The chart markers show the paper buy area, confirmation trigger, invalidation stop, and sell/trim targets. "
+            "They are decision aids, not real trade instructions."
+        )
+
+
+def render_premium_trade_ticket(analysis: dict[str, Any]) -> None:
+    levels = chart_trade_levels(analysis)
+    price = safe_float(analysis.get("Price"))
+    entry = levels["entry"]
+    stop = levels["stop"]
+    target = levels["target_1"]
+    risk = (entry - stop) if entry is not None and stop is not None else None
+    reward = (target - entry) if target is not None and entry is not None else None
+    risk_reward = (reward / risk) if risk and reward is not None and risk > 0 else None
+    distance = ((entry - price) / price * 100) if entry is not None and price else None
+    status = live_status(analysis)
+    with st.container(border=True):
+        st.markdown("**Trade ticket preview**")
+        cols = st.columns(5)
+        cols[0].metric("Current", money(price), status, border=True)
+        cols[1].metric("Entry", money(entry), pct(distance) if distance is not None else "wait", border=True)
+        cols[2].metric("Stop loss", money(stop), f"Risk {money(risk)}" if risk else "n/a", border=True)
+        cols[3].metric("Take profit", money(target), f"Reward {money(reward)}" if reward else "n/a", border=True)
+        cols[4].metric("R:R", f"{risk_reward:.2f}R" if risk_reward is not None else "n/a", "Target 1", border=True)
+        st.caption("Paper-trade preview only. Confirm news, spread, volume, and broker rules before any real order.")
+
+
+def chart_timestamp_seconds(value: Any) -> int:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    else:
+        timestamp = timestamp.tz_convert("UTC")
+    return int(timestamp.timestamp())
+
+
+def chart_series_points(chart_df: pd.DataFrame, column: str) -> list[dict[str, float | int]]:
+    if column not in chart_df.columns:
+        return []
+    rows: list[dict[str, float | int]] = []
+    for _, row in chart_df.dropna(subset=[column]).iterrows():
+        value = safe_float(row.get(column))
+        if value is None or not math.isfinite(value):
+            continue
+        rows.append({"time": chart_timestamp_seconds(row["Time"]), "value": round(float(value), 4)})
+    return rows
+
+
+def lightweight_chart_payload(
+    chart_df: pd.DataFrame,
+    analysis: dict[str, Any],
+    current_price: float,
+    visible_candles: int | None,
+) -> dict[str, Any]:
+    clean_df = chart_df.replace([np.inf, -np.inf], np.nan).dropna(subset=["Open", "High", "Low", "Close"]).copy()
+    candles: list[dict[str, float | int]] = []
+    volume: list[dict[str, float | int | str]] = []
+    palette = theme_palette()
+    up = "#26A69A"
+    down = "#EF5350"
+
+    for _, row in clean_df.iterrows():
+        candle_time = chart_timestamp_seconds(row["Time"])
+        open_price = float(row["Open"])
+        close_price = float(row["Close"])
+        candles.append(
+            {
+                "time": candle_time,
+                "open": round(open_price, 4),
+                "high": round(float(row["High"]), 4),
+                "low": round(float(row["Low"]), 4),
+                "close": round(close_price, 4),
+            }
+        )
+        volume.append(
+            {
+                "time": candle_time,
+                "value": max(float(row.get("Volume", 0) or 0), 0),
+                "color": "rgba(0, 200, 5, 0.42)" if close_price >= open_price else "rgba(255, 55, 95, 0.38)",
+            }
+        )
+
+    levels = chart_trade_levels(analysis)
+    price_lines: list[dict[str, Any]] = []
+
+    def add_price_line(label: str, value: float | None, color: str, style: str = "dashed") -> None:
+        if value is not None and math.isfinite(float(value)):
+            price_lines.append(
+                {
+                    "title": label,
+                    "price": round(float(value), 4),
+                    "color": color,
+                "style": style,
+                }
+            )
+
+    add_price_line("Current", safe_float(current_price), palette["text"], "solid")
+    add_price_line("Buy low", levels["buy_low"], palette["cyan"])
+    add_price_line("Buy high", levels["buy_high"], palette["cyan"])
+    add_price_line("Entry", levels["entry"], up)
+    add_price_line("Stop", levels["stop"], down)
+    add_price_line("TP1", levels["target_1"], up)
+    add_price_line("TP2", levels["target_2"], palette["blue"])
+
+    markers: list[dict[str, Any]] = []
+    if candles:
+        last_time = candles[-1]["time"]
+        if levels["entry"] is not None:
+            markers.append(
+                {
+                    "time": last_time,
+                    "position": "belowBar",
+                    "color": up,
+                    "shape": "arrowUp",
+                    "text": f"Entry {money(levels['entry'])}",
+                }
+            )
+        if levels["target_1"] is not None:
+            markers.append(
+                {
+                    "time": last_time,
+                    "position": "aboveBar",
+                    "color": up,
+                    "shape": "arrowDown",
+                    "text": f"TP1 {money(levels['target_1'])}",
+                }
+            )
+        if levels["stop"] is not None:
+            markers.append(
+                {
+                    "time": last_time,
+                    "position": "belowBar",
+                    "color": down,
+                    "shape": "square",
+                    "text": f"Stop {money(levels['stop'])}",
+                }
+            )
+
+    return {
+        "ticker": str(analysis.get("Ticker", "Stock")),
+        "candles": candles,
+        "volume": volume,
+        "ema9": chart_series_points(clean_df, "EMA 9"),
+        "ema20": chart_series_points(clean_df, "EMA 20"),
+        "vwap": chart_series_points(clean_df, "VWAP"),
+        "priceLines": price_lines,
+        "markers": markers,
+        "visibleCount": int(visible_candles or min(len(candles), 390)),
+        "palette": palette,
+        "status": live_status(analysis),
+    }
+
+
+def render_lightweight_trading_chart(
+    chart_df: pd.DataFrame,
+    analysis: dict[str, Any],
+    current_price: float,
+    height: int,
+    visible_candles: int | None,
+) -> bool:
+    payload = lightweight_chart_payload(chart_df, analysis, current_price, visible_candles)
+    if not payload["candles"]:
+        return False
+
+    chart_height = max(height + 360, 860)
+    component_html = """
+<div class="tw-shell">
+  <div class="tw-toolbar">
+    <div class="tw-brand">
+      <strong>TradingView-style candles</strong>
+      <span id="tw-status"></span>
+    </div>
+    <div class="tw-buttons" aria-label="Chart zoom buttons">
+      <span>Zoom</span>
+      <button data-range="45">45 candles</button>
+      <button data-range="90">90</button>
+      <button data-range="180">180</button>
+      <button data-range="390">390</button>
+      <button data-range="all">Fit all</button>
+    </div>
+  </div>
+  <div class="tw-subbar">
+    <div id="tw-legend" class="tw-legend"></div>
+    <div class="tw-hint">Wheel zoom | Drag pan | Double-click reset</div>
+  </div>
+  <div class="tw-stage">
+    <div id="tw-chart" class="tw-chart"></div>
+    <div class="tw-watermark">__TICKER__</div>
+  </div>
+</div>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+(() => {
+  const payload = __PAYLOAD__;
+  const palette = payload.palette;
+  const shell = document.querySelector(".tw-shell");
+  const container = document.getElementById("tw-chart");
+  const legend = document.getElementById("tw-legend");
+  const status = document.getElementById("tw-status");
+  const fmt = (value) => Number.isFinite(Number(value)) ? "$" + Number(value).toFixed(2) : "n/a";
+  const fmtVol = (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const fmtTime = (time) => new Date(Number(time) * 1000).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+
+  status.textContent = payload.ticker + " | " + payload.status;
+  if (!window.LightweightCharts) {
+    container.innerHTML = "<div class='tw-error'>The chart library did not load. Switch Chart style to Backup Plotly in Chart controls.</div>";
+    return;
+  }
+
+  const chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: container.clientHeight,
+    layout: {
+      background: { type: "solid", color: palette.panel },
+      textColor: palette.text,
+      fontFamily: "Inter, Arial, sans-serif"
+    },
+    grid: {
+      vertLines: { color: palette.chart_grid || palette.grid },
+      horzLines: { color: palette.chart_grid || palette.grid }
+    },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: { color: palette.muted_soft, width: 1, style: LightweightCharts.LineStyle.Dashed, labelBackgroundColor: palette.blue },
+      horzLine: { color: palette.muted_soft, width: 1, style: LightweightCharts.LineStyle.Dashed, labelBackgroundColor: palette.blue }
+    },
+    localization: {
+      priceFormatter: fmt,
+      timeFormatter: fmtTime
+    },
+    rightPriceScale: {
+      borderColor: palette.border,
+      scaleMargins: { top: 0.06, bottom: 0.18 },
+      entireTextOnly: true
+    },
+    timeScale: {
+      borderColor: palette.border,
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 12,
+      barSpacing: 16,
+      minBarSpacing: 7,
+      fixLeftEdge: false,
+      fixRightEdge: false,
+      lockVisibleTimeRangeOnResize: true,
+      rightBarStaysOnScroll: true,
+      shiftVisibleRangeOnNewBar: true
+    },
+    handleScroll: {
+      mouseWheel: true,
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: true
+    },
+    handleScale: {
+      axisPressedMouseMove: true,
+      mouseWheel: true,
+      priceScale: true,
+      pinch: true
+    }
+  });
+
+  const ro = new ResizeObserver((entries) => {
+    const entry = entries[0];
+    if (!entry) return;
+    const width = Math.max(Math.floor(entry.contentRect.width), 320);
+    const height = Math.max(Math.floor(entry.contentRect.height), 360);
+    chart.applyOptions({ width, height });
+  });
+  ro.observe(container);
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: "#26A69A",
+    downColor: "#EF5350",
+    borderVisible: false,
+    wickUpColor: "#26A69A",
+    wickDownColor: "#EF5350",
+    priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+    lastValueVisible: true,
+    priceLineVisible: true,
+    priceLineColor: palette.text,
+    priceLineWidth: 1,
+    priceLineStyle: LightweightCharts.LineStyle.Dotted
+  });
+  candleSeries.setData(payload.candles);
+
+  const volumeSeries = chart.addHistogramSeries({
+    priceFormat: { type: "volume" },
+    priceScaleId: "volume"
+  });
+  volumeSeries.setData(payload.volume);
+  chart.priceScale("volume").applyOptions({
+    scaleMargins: { top: 0.84, bottom: 0 },
+    visible: false
+  });
+
+  const addLineSeries = (data, color, title, width) => {
+    if (!data.length) return;
+    const series = chart.addLineSeries({
+      color,
+      lineWidth: width,
+      title,
+      priceLineVisible: false,
+      lastValueVisible: false
+    });
+    series.setData(data);
+  };
+  addLineSeries(payload.ema9, palette.blue, "EMA 9", 2);
+  addLineSeries(payload.ema20, palette.violet, "EMA 20", 2);
+  addLineSeries(payload.vwap, palette.orange, "VWAP", 2);
+
+  payload.priceLines.forEach((line) => {
+    candleSeries.createPriceLine({
+      price: line.price,
+      color: line.color,
+      lineWidth: line.style === "solid" ? 2 : 1,
+      lineStyle: line.style === "solid" ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: line.title
+    });
+  });
+
+  if (payload.markers.length && candleSeries.setMarkers) {
+    candleSeries.setMarkers(payload.markers);
+  }
+
+  const lastBar = payload.candles[payload.candles.length - 1];
+  const updateLegend = (bar, time) => {
+    if (!bar) return;
+    const volume = payload.volume.find((item) => item.time === time);
+    const change = ((Number(bar.close) - Number(bar.open)) / Math.max(Number(bar.open), 0.01)) * 100;
+    legend.innerHTML =
+      "<span>" + fmtTime(time) + "</span>" +
+      "<b>O</b> " + fmt(bar.open) +
+      "<b>H</b> " + fmt(bar.high) +
+      "<b>L</b> " + fmt(bar.low) +
+      "<b>C</b> " + fmt(bar.close) +
+      "<b>Vol</b> " + fmtVol(volume ? volume.value : 0) +
+      "<b class='" + (change >= 0 ? "up" : "down") + "'>" + change.toFixed(2) + "%</b>";
+  };
+  updateLegend(lastBar, lastBar.time);
+
+  chart.subscribeCrosshairMove((param) => {
+    const bar = param && param.seriesData ? param.seriesData.get(candleSeries) : null;
+    if (!param || !param.time || !bar) {
+      updateLegend(lastBar, lastBar.time);
+      return;
+    }
+    updateLegend(bar, param.time);
+  });
+
+  const setRange = (range) => {
+    if (range === "all") {
+      chart.timeScale().fitContent();
+      return;
+    }
+    const count = Math.max(Number(range) || 90, 10);
+    const end = payload.candles.length + 8;
+    const start = Math.max(payload.candles.length - count, 0);
+    chart.timeScale().setVisibleLogicalRange({ from: start, to: end });
+  };
+
+  document.querySelectorAll(".tw-buttons button").forEach((button) => {
+    button.addEventListener("click", () => setRange(button.dataset.range));
+  });
+
+  setRange(Math.min(payload.visibleCount || 90, payload.candles.length));
+  requestAnimationFrame(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight }));
+})();
+</script>
+<style>
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: __PANEL__;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  .tw-shell {
+    height: __CHART_HEIGHT__px;
+    background: linear-gradient(180deg, __PANEL__ 0%, __PANEL_ALT__ 100%);
+    border: 1px solid __BORDER__;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    color: __TEXT__;
+    font-family: Inter, Arial, sans-serif;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+  }
+  .tw-toolbar {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid __BORDER__;
+    background: __PANEL_ALT__;
+  }
+  .tw-brand {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    color: __TEXT__;
+  }
+  .tw-brand strong {
+    font-size: 14px;
+    letter-spacing: 0;
+  }
+  .tw-brand span {
+    color: __MUTED__;
+    font-size: 12px;
+  }
+  .tw-buttons {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tw-buttons span {
+    color: __MUTED__;
+    font-size: 12px;
+    margin-right: 2px;
+  }
+  .tw-buttons button {
+    border: 1px solid __BORDER__;
+    background: __PANEL__;
+    color: __TEXT__;
+    border-radius: 6px;
+    padding: 6px 9px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+  }
+  .tw-buttons button:hover {
+    border-color: __BLUE__;
+    color: __BLUE__;
+  }
+  .tw-legend {
+    min-height: 30px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    background: transparent;
+    color: __MUTED__;
+    font-size: 12px;
+  }
+  .tw-legend b {
+    color: __TEXT__;
+    margin-left: 4px;
+  }
+  .tw-legend .up { color: __UP__; }
+  .tw-legend .down { color: __DOWN__; }
+  .tw-subbar {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid __BORDER__;
+    background: __PANEL__;
+  }
+  .tw-hint {
+    color: __MUTED__;
+    font-size: 12px;
+    white-space: nowrap;
+    padding-right: 12px;
+  }
+  .tw-stage {
+    position: relative;
+    height: calc(100% - 82px);
+    background: __PANEL__;
+  }
+  .tw-chart {
+    height: 100%;
+    background: __PANEL__;
+  }
+  .tw-watermark {
+    position: absolute;
+    left: 22px;
+    top: 18px;
+    color: __MUTED__;
+    opacity: 0.14;
+    font-size: clamp(30px, 7vw, 88px);
+    font-weight: 800;
+    pointer-events: none;
+    user-select: none;
+    letter-spacing: 0;
+  }
+  .tw-chart canvas {
+    image-rendering: auto;
+  }
+  @media (max-width: 760px) {
+    .tw-toolbar, .tw-subbar {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .tw-hint {
+      padding: 0 12px 8px;
+    }
+    .tw-stage {
+      height: calc(100% - 130px);
+    }
+  }
+  .tw-error {
+    min-height: 320px;
+    display: grid;
+    place-items: center;
+    color: __MUTED__;
+    padding: 24px;
+    text-align: center;
+  }
+</style>
+"""
+    replacements = {
+        "__PAYLOAD__": json.dumps(payload),
+        "__CHART_HEIGHT__": str(chart_height),
+        "__TICKER__": html.escape(str(payload["ticker"])),
+        "__PANEL__": payload["palette"]["panel"],
+        "__PANEL_ALT__": payload["palette"]["panel_alt"],
+        "__BORDER__": payload["palette"]["border"],
+        "__TEXT__": payload["palette"]["text"],
+        "__MUTED__": payload["palette"]["muted_soft"],
+        "__BLUE__": payload["palette"]["blue"],
+        "__UP__": payload["palette"]["up_bright"],
+        "__DOWN__": payload["palette"]["down"],
+    }
+    for key, value in replacements.items():
+        component_html = component_html.replace(key, str(value))
+
+    components.html(component_html, height=chart_height + 6, scrolling=False)
+    return True
 
 
 def rebuild_analysis_from_history(
@@ -2116,6 +2926,8 @@ def render_plotly_trading_chart(
     show_vwap = bool(st.session_state.get("chart_layer_vwap", True))
     show_buy_zone = bool(st.session_state.get("chart_layer_buy_zone", True))
     show_plan_levels = bool(st.session_state.get("chart_layer_plan_levels", True))
+    show_ai_signals = bool(st.session_state.get("chart_layer_ai_signals", True))
+    levels = chart_trade_levels(analysis)
     fig = make_subplots(
         rows=2,
         cols=1,
@@ -2181,8 +2993,8 @@ def render_plotly_trading_chart(
 
     start_time = chart_df["Time"].iloc[0]
     end_time = chart_df["Time"].iloc[-1]
-    buy_low = safe_float(analysis.get("Buy low"))
-    buy_high = safe_float(analysis.get("Buy high"))
+    buy_low = levels["buy_low"]
+    buy_high = levels["buy_high"]
     if show_buy_zone and buy_low is not None and buy_high is not None:
         fig.add_shape(
             type="rect",
@@ -2217,11 +3029,48 @@ def render_plotly_trading_chart(
 
     if show_plan_levels:
         add_level("Current", current_price, text, "solid")
-        add_level("Buy low", analysis.get("Buy low"), palette["cyan"])
-        add_level("Buy high", analysis.get("Buy high"), palette["cyan"])
-        add_level("Stop", analysis.get("Stop price"), down)
-        add_level("Target 1", analysis.get("Target 1 price"), up)
+        add_level("Buy low", levels["buy_low"], palette["cyan"])
+        add_level("Buy high", levels["buy_high"], palette["cyan"])
+        add_level("Stop", levels["stop"], down)
+        add_level("Sell / trim", levels["target_1"], up)
+        add_level("Runner target", levels["target_2"], palette["blue"])
         add_level("Previous close", analysis.get("Previous close"), muted)
+
+    if show_ai_signals:
+        signal_specs = [
+            ("AI buy zone", levels["buy_mid"], palette["cyan"], "triangle-up", "Paper buy area"),
+            ("Entry trigger", levels["entry"], up, "triangle-up", "Buy only after confirmation"),
+            ("Stop / invalid", levels["stop"], down, "x", "Plan is wrong here"),
+            ("Sell / trim T1", levels["target_1"], up, "triangle-down", "First sell/trim target"),
+            ("Runner T2", levels["target_2"], palette["blue"], "triangle-down", "Second target"),
+        ]
+        signal_rows = [
+            {"Label": label, "Price": price, "Color": color, "Symbol": symbol, "Note": note}
+            for label, price, color, symbol, note in signal_specs
+            if price is not None
+        ]
+        if signal_rows:
+            fig.add_trace(
+                go.Scatter(
+                    x=[end_time for _ in signal_rows],
+                    y=[row["Price"] for row in signal_rows],
+                    mode="markers+text",
+                    marker=dict(
+                        color=[row["Color"] for row in signal_rows],
+                        symbol=[row["Symbol"] for row in signal_rows],
+                        size=15,
+                        line=dict(width=1.8, color=panel_bg),
+                    ),
+                    text=[row["Label"] for row in signal_rows],
+                    textposition="middle left",
+                    textfont=dict(color=text, size=12),
+                    customdata=[[row["Note"]] for row in signal_rows],
+                    name="AI trade map",
+                    hovertemplate="<b>%{text}</b><br>Price: $%{y:.2f}<br>%{customdata[0]}<extra></extra>",
+                ),
+                row=1,
+                col=1,
+            )
 
     fig.update_layout(
         height=chart_height,
@@ -2278,7 +3127,25 @@ def render_plotly_trading_chart(
     )
     visible_high = float(chart_df["High"].max())
     visible_low = float(chart_df["Low"].min())
-    pad = max((visible_high - visible_low) * 0.08, max(current_price * 0.004, 0.03))
+    overlay_values = []
+    if show_plan_levels or show_ai_signals:
+        overlay_values = [
+            value
+            for value in [
+                levels["buy_low"],
+                levels["buy_high"],
+                levels["entry"],
+                levels["stop"],
+                levels["target_1"],
+                levels["target_2"],
+                safe_float(analysis.get("Previous close")),
+            ]
+            if value is not None and math.isfinite(float(value))
+        ]
+    if overlay_values:
+        visible_high = max(visible_high, max(overlay_values))
+        visible_low = min(visible_low, min(overlay_values))
+    pad = max((visible_high - visible_low) * 0.10, max(current_price * 0.004, 0.03))
     volume_max = max(float(chart_df["Volume"].max()), 1.0)
     fig.update_yaxes(
         title_text="Price",
@@ -2324,7 +3191,7 @@ def render_candlestick_chart(
     max_candles: int | None = 180,
 ) -> None:
     if history.empty:
-        st.info("No chart data available for this ticker.")
+        st.info("No chart data available for this stock.")
         return
 
     if max_candles:
@@ -2356,7 +3223,13 @@ def render_candlestick_chart(
     metric_cols[2].metric("Range low", money(range_low), border=True)
     metric_cols[3].metric("VWAP", money(latest_vwap), border=True)
 
-    candle_size = 13 if len(chart_df) <= 90 else 9 if len(chart_df) <= 180 else 6 if len(chart_df) <= 390 else 3
+    candle_size = 16 if len(chart_df) <= 90 else 12 if len(chart_df) <= 180 else 8 if len(chart_df) <= 390 else 4
+    chart_engine = st.session_state.get("chart_engine", "TradingView-style")
+
+    if chart_engine == "TradingView-style":
+        rendered = render_lightweight_trading_chart(chart_df, analysis, current_price, height, max_candles)
+        if rendered:
+            return
 
     if go is not None and make_subplots is not None:
         render_plotly_trading_chart(chart_df, analysis, current_price, height)
@@ -2483,7 +3356,6 @@ def render_chart_panel(
     prefer_live: bool,
     max_candles: int | None = 180,
 ) -> None:
-    analysis = analyze_ticker(ticker, period=period, interval=interval, prefer_live=prefer_live)
     history, source = load_history(ticker, period=period, interval=interval, prefer_live=prefer_live)
     if prefer_live and source == "Learning data":
         try:
@@ -2496,8 +3368,8 @@ def render_chart_panel(
                 print(f"[chart-panel] direct live retry returned no usable bars for {ticker} {period}/{interval}", flush=True)
         except Exception as exc:
             print(f"[chart-panel] direct live retry failed for {ticker} {period}/{interval}: {exc}", flush=True)
-    if prefer_live and source != "Learning data" and analysis.get("Data source") == "Learning data":
-        analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=True)
+
+    analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=prefer_live)
 
     chart_quality, chart_color = data_quality_badge(source)
     st.badge(f"Chart source: {chart_quality}", icon=":material/candlestick_chart:", color=chart_color)
@@ -2508,6 +3380,8 @@ def render_chart_panel(
         )
 
     render_ai_decision_panel(analysis)
+    render_ai_chart_trade_map(analysis)
+    render_premium_trade_ticket(analysis)
     render_plan_card(analysis)
     render_candlestick_chart(history, analysis, max_candles=max_candles)
     st.caption(
@@ -2602,7 +3476,7 @@ def live_tracker_frame(tickers: tuple[str, ...], include_scan: bool = True) -> p
                 seen.add(ticker)
 
     for ticker in tickers:
-        clean_ticker = ticker.strip().upper()
+        clean_ticker = normalize_user_symbol(ticker)
         if not clean_ticker:
             continue
         analysis = analyze_ticker(clean_ticker, period="5d", interval="5m", prefer_live=True)
@@ -2635,7 +3509,7 @@ def show_tracker_table(df: pd.DataFrame) -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "Ticker": st.column_config.TextColumn("Ticker", pinned=True),
+            "Ticker": st.column_config.TextColumn("Stock", pinned=True),
             "Status": st.column_config.TextColumn("Status"),
             "Playbook fit": st.column_config.TextColumn("Fit"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
@@ -2725,25 +3599,30 @@ def page_dashboard() -> None:
     status_cards(
         [
             ("Candidates", str(len(df)), "calm"),
-            ("Top ticker", str(best["Ticker"]), "good"),
+            ("Top stock", str(best["Ticker"]), "good"),
             ("Top score", f"{int(best['AI score'])}/100", "hot"),
             ("Top gain", pct(best["Daily gain %"]), "good"),
             ("Top RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
 
-    left, right = st.columns([1.35, 0.85], vertical_alignment="top")
-    with left:
+    news_symbols = tuple(unique_symbols([str(item) for item in df["Ticker"].head(10).tolist()] + read_watchlist() + CORE_MARKET_TICKERS[:8]))
+    news_col, main_col, right_col = st.columns([0.95, 1.35, 0.85], vertical_alignment="top")
+    with news_col:
+        render_big_news_rail(news_symbols)
+    with main_col:
         st.subheader("Primary watch")
         render_ai_decision_panel(best)
         render_plan_card(best)
-    with right:
+    with right_col:
         with st.container(border=True):
             st.markdown("**Market clocks**")
             st.dataframe(market_clock_frame(), width="stretch", hide_index=True)
         with st.container(border=True):
-            st.markdown("**Market news**")
-            render_news_items(finnhub_market_news("general", limit=4), "No market news returned yet.")
+            st.markdown("**What to check next**")
+            st.write("- Open Charts for 1-minute candles and AI buy/sell levels.")
+            st.write("- Read the news before approving any paper plan.")
+            st.write("- Use Journal even when the best decision is no trade.")
 
     st.subheader("Scanner candidates")
     show_scan_table(df, key="dashboard_scan_table")
@@ -2809,7 +3688,7 @@ def page_scanner() -> None:
         status_cards(
             [
                 ("Matches", str(len(df)), "calm"),
-                ("Best ticker", str(top["Ticker"]), "good"),
+                ("Best stock", str(top["Ticker"]), "good"),
                 ("Best gain", pct(top["Daily gain %"]), "good"),
                 ("Best score", f"{int(top['AI score'])}/100", "hot"),
             ]
@@ -2836,10 +3715,10 @@ def page_market_scan() -> None:
             selection_mode="multi",
         )
         custom = st.text_area(
-            "Add tickers",
+            "Add stocks",
             value="",
             height=80,
-            placeholder="Example: NVDA, SPY, TSM, BTC-USD",
+            placeholder="Example stocks: NVDA, SPY, TSM, BTC-USD",
         )
         cols = st.columns([1, 1, 1, 1])
         batch_size = cols[0].number_input("Batch size", 5, 250, DEFAULT_MARKET_SCAN_BATCH, step=5)
@@ -2929,43 +3808,81 @@ def page_market_scan() -> None:
 
 
 def page_charts() -> None:
-    header("Charts", "Chart the candidate, trend, volume, and paper-trade levels.")
-    selected_from_scan = str(st.session_state.get("selected_ticker", "")).upper().strip()
-    tickers = [row["ticker"] for row in DEMO_PROFILES] + read_watchlist()
+    header("Charts", "Chart the stock, trend, volume, and paper-trade levels.")
+    selected_from_scan = normalize_user_symbol(st.session_state.get("selected_ticker", ""))
+    tickers = [row["ticker"] for row in DEMO_PROFILES] + list(INDEX_PROFILES) + read_watchlist()
     if selected_from_scan:
         tickers.append(selected_from_scan)
     ticker_options = sorted(set(tickers))
     selected_index = ticker_options.index(selected_from_scan) if selected_from_scan in ticker_options else 0
-    cols = st.columns([1, 1, 1, 1])
-    selected_ticker = cols[0].selectbox("Ticker", ticker_options, index=selected_index)
-    custom_ticker = cols[1].text_input("Custom ticker", value="").upper().strip()
-    interval = cols[2].selectbox("Candle", ["1m", "2m", "5m", "15m", "30m", "60m", "1d"], index=0)
-    if interval == "1m":
-        period_options = ["1d", "5d"]
-    elif interval in {"2m", "5m", "15m", "30m", "60m"}:
-        period_options = ["1d", "5d", "1mo", "3mo"]
-    else:
-        period_options = ["1mo", "3mo", "6mo", "1y", "2y"]
-    period = cols[3].selectbox("Range", period_options, index=0)
-    candle_windows = {
-        "Last 90": 90,
-        "Last 180": 180,
-        "Last 390": 390,
-        "All loaded": None,
-    }
-    control_cols = st.columns([1, 1, 1, 2])
-    live_toggle = control_cols[0].toggle("Use live Yahoo chart data", value=True, key="chart_live_enabled")
-    auto_refresh = control_cols[1].toggle("Auto-refresh chart", value=True, key="chart_auto_refresh_enabled")
-    default_window_index = 0 if interval == "1m" else 1
-    window_label = control_cols[2].selectbox("Visible candles", list(candle_windows), index=default_window_index)
-    with control_cols[3].popover("Chart layers", icon=":material/tune:"):
-        st.toggle("EMA 9", value=True, key="chart_layer_ema9")
-        st.toggle("EMA 20", value=True, key="chart_layer_ema20")
-        st.toggle("VWAP", value=True, key="chart_layer_vwap")
-        st.toggle("Buy zone shading", value=True, key="chart_layer_buy_zone")
-        st.toggle("Plan levels", value=True, key="chart_layer_plan_levels")
-        st.caption("Zoom, pan, and drawing tools are in the chart toolbar.")
-    ticker = custom_ticker or selected_ticker
+    cols = st.columns([1, 1])
+    selected_ticker = cols[0].selectbox("Stock", ticker_options, index=selected_index)
+    custom_ticker = normalize_user_symbol(cols[1].text_input("Custom stock", value=""))
+
+    with st.container(border=True):
+        st.markdown("**Chart controls**")
+        control_top = st.columns([1.6, 1.4, 1.6])
+        interval = control_top[0].segmented_control(
+            "Candle size",
+            ["1m", "2m", "5m", "15m", "30m", "60m", "1d"],
+            default="1m",
+            key="chart_interval",
+        )
+        interval = str(interval or "1m")
+        chart_engine = control_top[1].segmented_control(
+            "Chart style",
+            ["TradingView-style", "Backup Plotly"],
+            default=st.session_state.get("chart_engine", "TradingView-style"),
+            key="chart_engine",
+        )
+        chart_engine = str(chart_engine or "TradingView-style")
+
+        if interval == "1m":
+            period_options = ["1d", "5d"]
+        elif interval in {"2m", "5m", "15m", "30m", "60m"}:
+            period_options = ["1d", "5d", "1mo", "3mo"]
+        else:
+            period_options = ["1mo", "3mo", "6mo", "1y", "2y"]
+
+        period = control_top[2].segmented_control(
+            "Chart range",
+            period_options,
+            default=period_options[0],
+            key=f"chart_period_{interval}",
+        )
+        period = str(period or period_options[0])
+
+        candle_windows = {
+            "45": 45,
+            "90": 90,
+            "180": 180,
+            "390": 390,
+            "All": None,
+        }
+        control_bottom = st.columns([1.6, 1, 1, 1, 1, 1])
+        default_window = "45" if interval == "1m" else "180"
+        window_label = control_bottom[0].segmented_control(
+            "Visible candles",
+            list(candle_windows),
+            default=default_window,
+            key=f"chart_visible_candles_{interval}",
+        )
+        live_toggle = control_bottom[1].toggle("Live data", value=True, key="chart_live_enabled")
+        auto_refresh = control_bottom[2].toggle("Auto-refresh", value=True, key="chart_auto_refresh_enabled")
+        control_bottom[3].toggle("EMAs", value=True, key="chart_layer_emas")
+        control_bottom[4].toggle("VWAP", value=True, key="chart_layer_vwap")
+        control_bottom[5].toggle("AI levels", value=True, key="chart_layer_ai_signals")
+
+        st.caption(
+            "Use the 45/90/180/390 buttons inside the chart for quick zoom. Mouse wheel zooms, drag pans, and double-click resets."
+        )
+
+    st.session_state.chart_layer_ema9 = bool(st.session_state.get("chart_layer_emas", True))
+    st.session_state.chart_layer_ema20 = bool(st.session_state.get("chart_layer_emas", True))
+    st.session_state.chart_layer_buy_zone = bool(st.session_state.get("chart_layer_ai_signals", True))
+    st.session_state.chart_layer_plan_levels = bool(st.session_state.get("chart_layer_ai_signals", True))
+
+    ticker = normalize_user_symbol(custom_ticker or selected_ticker)
     st.session_state.selected_ticker = ticker
     max_candles = candle_windows[window_label]
     prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
@@ -2983,17 +3900,17 @@ def page_charts() -> None:
 
 
 def page_ai_coach() -> None:
-    header("AI Coach", "Turn a ticker into a structured paper-trade plan.")
+    header("AI Coach", "Turn a stock into a structured paper-trade plan.")
     cols = st.columns([1, 1, 2])
-    ticker = cols[0].text_input("Ticker", value=st.session_state.get("selected_ticker", "SOUN")).upper()
+    ticker = normalize_user_symbol(cols[0].text_input("Stock", value=st.session_state.get("selected_ticker", "SOUN")))
     period = cols[1].selectbox("Lookback", ["1mo", "3mo", "6mo", "1y"], index=1)
     prefer_live = cols[2].toggle("Use live Yahoo data", value=True, key="ai_live")
 
     analysis = analyze_ticker(ticker, period=period, prefer_live=prefer_live)
     render_ai_decision_panel(analysis)
     render_plan_card(analysis)
-    with st.expander(f":material/article: News catalyst for {ticker}", expanded=True):
-        render_news_items(finnhub_company_news(ticker, days=5, limit=5))
+    with st.expander(f":material/article: News catalyst for {analysis.get('Ticker', ticker)}", expanded=True):
+        render_news_items(finnhub_company_news(str(analysis.get("Ticker", ticker)), days=5, limit=5))
 
     with st.container(border=True):
         st.markdown("**Paper-trade checklist**")
@@ -3011,8 +3928,8 @@ def page_watchlist() -> None:
 
     with st.form("add_watchlist"):
         cols = st.columns([1, 3])
-        new_ticker = cols[0].text_input("Ticker").upper().strip()
-        add = cols[1].form_submit_button("Add ticker", type="primary")
+        new_ticker = normalize_user_symbol(cols[0].text_input("Stock"))
+        add = cols[1].form_submit_button("Add stock", type="primary")
         if add and new_ticker:
             watchlist.append(new_ticker)
             write_watchlist(watchlist)
@@ -3048,7 +3965,7 @@ def page_trade_desk() -> None:
     )
 
     cols = st.columns([1, 1, 1, 1])
-    ticker = cols[0].text_input("Ticker", value=st.session_state.get("selected_ticker", "NVDA")).upper().strip()
+    ticker = normalize_user_symbol(cols[0].text_input("Stock", value=st.session_state.get("selected_ticker", "NVDA")))
     risk_dollars = cols[1].number_input("Max paper risk $", min_value=1.0, max_value=10000.0, value=25.0, step=5.0)
     period = cols[2].selectbox("Lookback", ["1d", "5d", "1mo", "3mo"], index=1)
     interval = cols[3].selectbox("Candle", ["1m", "5m", "15m", "1d"], index=1)
@@ -3090,7 +4007,7 @@ def page_journal() -> None:
     with st.form("journal_entry"):
         top = st.columns([1, 1, 2])
         trade_date = top[0].date_input("Date", value=date.today())
-        ticker = top[1].text_input("Ticker", value=st.session_state.get("selected_ticker", "SOUN")).upper()
+        ticker = normalize_user_symbol(top[1].text_input("Stock", value=st.session_state.get("selected_ticker", "SOUN")))
         setup = top[2].text_input("Setup", value="Momentum gapper")
 
         nums = st.columns(4)
@@ -3134,7 +4051,7 @@ def page_backtester() -> None:
     header("Backtester", "Test the momentum-gap rule on recent history.")
     with st.form("backtester_form"):
         cols = st.columns(5)
-        ticker = cols[0].text_input("Ticker", value="SOUN").upper()
+        ticker = normalize_user_symbol(cols[0].text_input("Stock", value="SOUN"))
         period = cols[1].selectbox("Period", ["3mo", "6mo", "1y", "2y"], index=1)
         min_gap = cols[2].number_input("Min gap %", 1.0, 50.0, 10.0, step=1.0)
         min_rvol = cols[3].number_input("Min RVOL", 0.5, 20.0, 3.0, step=0.5)
@@ -3220,7 +4137,7 @@ def page_learn() -> None:
         with cols[2]:
             with st.container(border=True, height="stretch"):
                 st.markdown("**3. Practice the workflow**")
-                st.write("- Pick one ticker from Scanner or Market Scan.")
+                st.write("- Pick one stock from Scanner or Market Scan.")
                 st.write("- Open Charts and check trend, volume, news, and levels.")
                 st.write("- Open Trade Desk and stage a paper order.")
                 st.write("- Save the result in Journal after the trade is done.")
@@ -3229,7 +4146,7 @@ def page_learn() -> None:
             st.markdown("**The app workflow for a brand-new trader**")
             st.write("1. Go to Market Scan to see what the broad market and big names are doing.")
             st.write("2. Go to Scanner for small-cap momentum candidates that match the app rules.")
-            st.write("3. Click a ticker row, then open Charts to inspect the candle trend and plan levels.")
+            st.write("3. Click a stock row, then open Charts to inspect the candle trend and plan levels.")
             st.write("4. Read the AI decision. If it says Study only or Watch only, do not force a trade.")
             st.write("5. Open Trade Desk, set your max paper risk, review the staged order, and only approve if every checklist item makes sense.")
             st.write("6. Open Journal and record what happened, even if you skipped the trade.")
@@ -3251,7 +4168,7 @@ def page_learn() -> None:
         with cols[0]:
             with st.container(border=True):
                 st.markdown("**Before you stage the order**")
-                st.write("1. Pick a ticker from Scanner or Market Scan.")
+                st.write("1. Pick a stock from Scanner or Market Scan.")
                 st.write("2. Open Charts and confirm the 1-minute or 5-minute candle trend.")
                 st.write("3. Check that price is not far above the buy zone.")
                 st.write("4. Check news, volume, RVOL, float, and spread risk.")
@@ -3259,7 +4176,7 @@ def page_learn() -> None:
         with cols[1]:
             with st.container(border=True):
                 st.markdown("**Inside Trade Desk**")
-                st.write("1. Enter the ticker.")
+                st.write("1. Enter the stock symbol.")
                 st.markdown(markdown_text("2. Set Max paper risk, like $10, $25, or $50."))
                 st.write("3. Choose the lookback and candle size.")
                 st.write("4. Read the AI decision and setup checks.")
@@ -3291,7 +4208,7 @@ def page_learn() -> None:
         with cols[0]:
             with st.container(border=True):
                 st.markdown("**Common broker ticket fields**")
-                st.write("- Symbol: the ticker, like NVDA or SOUN.")
+                st.write("- Symbol: the stock symbol, like NVDA or SOUN.")
                 st.write("- Side: buy, sell, sell short, or buy to cover.")
                 st.write("- Quantity: how many shares.")
                 st.write("- Order type: market, limit, stop, or stop-limit.")
@@ -3310,7 +4227,7 @@ def page_learn() -> None:
             st.markdown("**How the app's staged paper order maps to a broker ticket**")
             mapping = pd.DataFrame(
                 [
-                    {"App field": "Ticker", "Broker ticket field": "Symbol", "Beginner meaning": "The stock you are practicing."},
+                    {"App field": "Stock", "Broker ticket field": "Symbol", "Beginner meaning": "The stock you are practicing."},
                     {"App field": "Side", "Broker ticket field": "Action", "Beginner meaning": "Usually Buy for this paper long setup."},
                     {"App field": "Shares", "Broker ticket field": "Quantity", "Beginner meaning": "Calculated from max paper risk and stop distance."},
                     {"App field": "Entry", "Broker ticket field": "Stop or limit price", "Beginner meaning": "The confirmation level, not a guarantee."},
@@ -3367,7 +4284,7 @@ def page_learn() -> None:
             with st.container(border=True):
                 st.markdown("**Before the open**")
                 st.write("- Build a short watchlist instead of chasing every mover.")
-                st.write("- Check news, float, relative volume, and whether the ticker is easy to borrow or has special risk.")
+                st.write("- Check news, float, relative volume, and whether the stock is easy to borrow or has special risk.")
                 st.write("- Mark the levels where the idea works and where it is wrong.")
         with cols[1]:
             with st.container(border=True):
@@ -3452,13 +4369,20 @@ def page_learn() -> None:
                 st.write("- Did the move already exhaust before you found it?")
 
         with st.container(border=True):
+            st.markdown("**How to use the Dashboard news rail**")
+            st.write("- Biggest news dropped ranks headlines by freshness, catalyst words, risk words, and symbols the app is already scanning.")
+            st.write("- Impact is not a buy signal. It means the headline deserves attention before you stage a paper trade.")
+            st.write("- Risk headlines like offerings, halts, lawsuits, investigations, or delisting warnings should slow you down.")
+            st.write("- Good news still needs chart confirmation: volume, VWAP/EMA hold, clean entry, written stop, and enough reward.")
+
+        with st.container(border=True):
             st.markdown("**Live market news**")
             render_news_items(finnhub_market_news("general", limit=6), "Add your Finnhub key or try again later for live news.")
 
     elif track == "Practice":
         with st.container(border=True):
             st.markdown("**Paper-trade drill**")
-            drill_ticker = st.text_input("Practice ticker", value=st.session_state.get("selected_ticker", "NVDA")).upper()
+            drill_ticker = normalize_user_symbol(st.text_input("Practice stock", value=st.session_state.get("selected_ticker", "NVDA")))
             analysis = analyze_ticker(drill_ticker, period="5d", interval="5m", prefer_live=True)
             render_plan_card(analysis)
 
@@ -3491,13 +4415,33 @@ def page_learn() -> None:
                 {"Term": "Ask", "Meaning": "The lowest displayed price sellers are currently offering.", "Why it matters": "Buyers often transact near the ask."},
                 {"Term": "Spread", "Meaning": "The gap between bid and ask.", "Why it matters": "Wide spreads make entries and exits more expensive and harder to control."},
                 {"Term": "Time in force", "Meaning": "How long an order stays active, such as day-only or good-till-canceled.", "Why it matters": "A forgotten open order can create surprises."},
+                {"Term": "Premarket", "Meaning": "Trading before the regular market open.", "Why it matters": "Moves can be fast, spreads can be wide, and volume can be thinner."},
+                {"Term": "After-hours", "Meaning": "Trading after the regular market close.", "Why it matters": "News often drops after the bell, but fills can be less predictable."},
                 {"Term": "Gapper", "Meaning": "A stock opening or trading far above the prior close.", "Why it matters": "It can reveal fresh demand, but late entries can fade fast."},
                 {"Term": "Float", "Meaning": "Shares available for public trading.", "Why it matters": "Lower float can move faster because there is less supply."},
                 {"Term": "RVOL", "Meaning": "Relative volume compared with normal trading volume.", "Why it matters": "High RVOL shows unusual attention today."},
+                {"Term": "Liquidity", "Meaning": "How easy it is to buy or sell without moving price too much.", "Why it matters": "Low liquidity can make exits harder."},
+                {"Term": "Slippage", "Meaning": "The difference between the price you expected and the price you actually get.", "Why it matters": "Fast stocks and market orders can slip badly."},
                 {"Term": "VWAP", "Meaning": "Volume-weighted average price.", "Why it matters": "Many traders use it as an intraday control line."},
+                {"Term": "Support", "Meaning": "A price area where buyers have recently defended the stock.", "Why it matters": "Pullbacks often need support to hold before a safe plan forms."},
+                {"Term": "Resistance", "Meaning": "A price area where sellers have recently stopped the stock.", "Why it matters": "Breakouts usually need to clear resistance with volume."},
+                {"Term": "Breakout", "Meaning": "Price pushes above a watched level with momentum.", "Why it matters": "The app's entry trigger is a breakout confirmation idea."},
+                {"Term": "Pullback", "Meaning": "A controlled dip after a move up.", "Why it matters": "Better entries often come from controlled pullbacks, not chasing highs."},
+                {"Term": "Consolidation", "Meaning": "Price pauses in a tighter range after moving.", "Why it matters": "A clean range can create a clearer trigger and stop."},
                 {"Term": "Entry trigger", "Meaning": "The level that confirms buyers are stepping in.", "Why it matters": "It helps avoid buying only because price is moving."},
                 {"Term": "Stop", "Meaning": "The level where the idea is invalid.", "Why it matters": "It defines risk before the trade."},
+                {"Term": "Target", "Meaning": "A planned exit area for taking profit.", "Why it matters": "Targets make reward measurable before entry."},
+                {"Term": "Trim", "Meaning": "Selling part of a position at a target while keeping some open.", "Why it matters": "It can lock in a partial result while still leaving room for a runner."},
+                {"Term": "Runner", "Meaning": "The remaining shares kept after a partial exit.", "Why it matters": "A runner needs a written exit plan too."},
                 {"Term": "R multiple", "Meaning": "Reward or loss measured against the planned risk.", "Why it matters": "It lets you compare trades fairly."},
+                {"Term": "Halt", "Meaning": "A temporary pause in trading by an exchange.", "Why it matters": "Halts can reopen far above or below the last price."},
+                {"Term": "Offering", "Meaning": "A company sells more shares to raise money.", "Why it matters": "Offerings can pressure price because supply increases."},
+                {"Term": "Dilution", "Meaning": "Existing shares represent a smaller slice after new shares are issued.", "Why it matters": "Small-cap momentum can reverse quickly on dilution news."},
+                {"Term": "Short interest", "Meaning": "Shares borrowed and sold by traders betting price will fall.", "Why it matters": "High short interest can add volatility, but it is not automatically bullish."},
+                {"Term": "Easy to borrow", "Meaning": "A broker label showing shares may be available to short.", "Why it matters": "Borrow status can affect short-side trading and squeeze risk."},
+                {"Term": "Margin account", "Meaning": "A brokerage account that can borrow from the broker under rules.", "Why it matters": "Margin can increase risk and trigger pattern day trader rules."},
+                {"Term": "Cash account", "Meaning": "A brokerage account using settled cash instead of margin.", "Why it matters": "Cash accounts have settlement rules that can limit how often funds are reused."},
+                {"Term": "Settlement", "Meaning": "The process where cash and shares officially exchange after a trade.", "Why it matters": "Using unsettled funds incorrectly can create broker restrictions."},
                 {"Term": "Pattern day trader rule", "Meaning": "A broker/margin-account rule that can apply to frequent day trading.", "Why it matters": "Real traders must check broker rules before day trading with margin."},
             ]
         )
@@ -3521,7 +4465,7 @@ def page_learn() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="MomentumScannerAI", page_icon=":material/monitoring:", layout="wide")
+    st.set_page_config(page_title=APP_NAME, page_icon=":material/monitoring:", layout="wide")
     mode = display_mode_control()
     apply_style(mode)
     pages = [

@@ -1,6 +1,6 @@
-# MomentumScannerAI
+# Trading for Dummys 101
 
-Clean Streamlit rebuild for learning low-priced momentum day-trade setups.
+Clean Streamlit app for learning low-priced momentum day-trade setups, live charts, watchlists, ranked news, and paper-trade planning.
 
 Default scanner rules:
 
