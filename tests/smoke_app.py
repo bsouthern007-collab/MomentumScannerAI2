@@ -16,6 +16,11 @@ def main() -> None:
     assert analysis["AI score"] > 0
     assert analysis["Entry trigger"].startswith("Break over")
     assert app.setup_completion(analysis)[1] == 7
+    assert app.clean_market_symbol("brk.b") == "BRK-B"
+    assert app.tradeable_security_name("Community Bancorp Common Stock", include_etfs=True)
+    assert not app.tradeable_security_name("Example Acquisition Units", include_etfs=True)
+    assert app.ticker_batch(["A", "B", "C", "D"], 1, 2) == ["B", "C"]
+    assert app.next_batch_start(2, 2, 4) == 0
 
     result = app.backtest_strategy("SOUN", "6mo", False, 10, 3, 3)
     assert "summary" in result

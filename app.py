@@ -37,6 +37,9 @@ LIVE_REFRESH_SECONDS = 30
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 FINNHUB_API_URL = "https://finnhub.io/api/v1/{endpoint}"
 SP500_SOURCE_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
+OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+DEFAULT_MARKET_SCAN_BATCH = 80
 DATA_DIR.mkdir(exist_ok=True)
 YFINANCE_CACHE_DIR.mkdir(exist_ok=True)
 
@@ -439,6 +442,56 @@ def setup_completion(analysis: dict[str, Any]) -> tuple[int, int]:
     return sum(1 for _, passed, _ in checks if passed), len(checks)
 
 
+def clean_market_symbol(symbol: Any) -> str:
+    clean = str(symbol or "").strip().upper().replace(".", "-").replace("/", "-")
+    if not clean or clean in {"N/A", "NAN", "NONE"}:
+        return ""
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+    if any(char not in allowed for char in clean):
+        return ""
+    excluded_suffixes = ("-W", "-WS", "-WT", "-U", "-R", "-RT", "-PR", "-P")
+    if clean.endswith(excluded_suffixes):
+        return ""
+    return clean
+
+
+def tradeable_security_name(name: Any, include_etfs: bool) -> bool:
+    text = str(name or "").lower()
+    if not text:
+        return True
+    normalized = text
+    for char in ",.;:/()[]{}-":
+        normalized = normalized.replace(char, " ")
+    words = set(normalized.split())
+    blocked_words = {
+        "warrant",
+        "warrants",
+        "right",
+        "rights",
+        "unit",
+        "units",
+        "preferred",
+        "preference",
+        "note",
+        "notes",
+        "bond",
+        "bonds",
+        "debenture",
+        "debentures",
+        "redeemable",
+    }
+    blocked_phrases = ("preferred stock", "depositary share", "depositary shares")
+    if words.intersection(blocked_words) or any(phrase in text for phrase in blocked_phrases):
+        return False
+    if not include_etfs and any(word in text for word in ("etf", "fund", "trust", "etn")):
+        return False
+    return True
+
+
+def unique_symbols(symbols: list[str]) -> list[str]:
+    return [symbol for symbol in dict.fromkeys(symbols) if symbol]
+
+
 def get_secret(name: str) -> str:
     value = ""
     try:
@@ -471,6 +524,89 @@ def finnhub_get(endpoint: str, params: dict[str, Any] | None = None) -> Any:
     )
     response.raise_for_status()
     return response.json()
+
+
+def finnhub_key_marker() -> str:
+    key = finnhub_api_key()
+    return f"key-{len(key)}-{key[-4:]}" if key else "no-key"
+
+
+@st.cache_data(ttl=86400, max_entries=4, show_spinner=False)
+def finnhub_us_symbols(api_marker: str, include_etfs: bool = True) -> list[str]:
+    if api_marker == "no-key":
+        return []
+    try:
+        payload = finnhub_get("stock/symbol", {"exchange": "US"})
+        if not isinstance(payload, list):
+            return []
+        symbols: list[str] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            symbol = clean_market_symbol(item.get("symbol"))
+            if not symbol:
+                continue
+            security_type = str(item.get("type") or "").lower()
+            description = item.get("description")
+            if not include_etfs and "etf" in security_type:
+                continue
+            if tradeable_security_name(description, include_etfs):
+                symbols.append(symbol)
+        return sorted(unique_symbols(symbols))
+    except Exception:
+        return []
+
+
+def parse_symbol_directory(text: str, symbol_column: str, include_etfs: bool = True) -> list[str]:
+    lines = [line for line in text.splitlines() if line and not line.startswith("File Creation")]
+    if not lines:
+        return []
+    headers = lines[0].split("|")
+    symbols: list[str] = []
+    for line in lines[1:]:
+        values = line.split("|")
+        if len(values) != len(headers):
+            continue
+        row = dict(zip(headers, values))
+        if str(row.get("Test Issue", "")).upper() == "Y":
+            continue
+        if not include_etfs and str(row.get("ETF", "")).upper() == "Y":
+            continue
+        if not tradeable_security_name(row.get("Security Name"), include_etfs):
+            continue
+        symbol = clean_market_symbol(row.get(symbol_column))
+        if symbol:
+            symbols.append(symbol)
+    return symbols
+
+
+@st.cache_data(ttl=86400, max_entries=4, show_spinner=False)
+def nasdaqtrader_symbols(include_etfs: bool = True) -> list[str]:
+    symbols: list[str] = []
+    try:
+        response = requests.get(NASDAQ_LISTED_URL, headers={"User-Agent": "Mozilla/5.0 MomentumScannerAI"}, timeout=10)
+        response.raise_for_status()
+        symbols.extend(parse_symbol_directory(response.text, "Symbol", include_etfs=include_etfs))
+    except Exception:
+        pass
+    try:
+        response = requests.get(OTHER_LISTED_URL, headers={"User-Agent": "Mozilla/5.0 MomentumScannerAI"}, timeout=10)
+        response.raise_for_status()
+        symbols.extend(parse_symbol_directory(response.text, "ACT Symbol", include_etfs=include_etfs))
+    except Exception:
+        pass
+    return sorted(unique_symbols(symbols))
+
+
+@st.cache_data(ttl=86400, max_entries=6, show_spinner=False)
+def full_us_market_universe(include_etfs: bool = True, api_marker: str = "no-key") -> tuple[list[str], str]:
+    symbols = finnhub_us_symbols(api_marker, include_etfs=include_etfs)
+    if symbols:
+        return symbols, "Finnhub US symbol list"
+    symbols = nasdaqtrader_symbols(include_etfs=include_etfs)
+    if symbols:
+        return symbols, "Nasdaq Trader symbol directory"
+    return [], "Full universe unavailable"
 
 
 def ticker_seed(ticker: str) -> int:
@@ -1173,7 +1309,7 @@ def sp500_tickers() -> list[str]:
         return SP500_SAMPLE_TICKERS
 
 
-def market_scan_universe(presets: list[str], custom_tickers: str = "") -> list[str]:
+def market_scan_universe(presets: list[str], custom_tickers: str = "", include_etfs: bool = True) -> list[str]:
     tickers: list[str] = []
     if "Core movers" in presets:
         tickers.extend(CORE_MARKET_TICKERS)
@@ -1181,11 +1317,42 @@ def market_scan_universe(presets: list[str], custom_tickers: str = "") -> list[s
         tickers.extend(sp500_tickers())
     if "Watchlist" in presets:
         tickers.extend(read_watchlist())
+    if "All US stocks" in presets:
+        full_universe, _ = full_us_market_universe(include_etfs=include_etfs, api_marker=finnhub_key_marker())
+        tickers.extend(full_universe)
     for preset, values in GLOBAL_MARKET_WATCH.items():
         if preset in presets:
             tickers.extend(values)
-    tickers.extend(part.strip().upper() for part in custom_tickers.replace("\n", ",").split(",") if part.strip())
-    return sorted(dict.fromkeys(tickers))
+    tickers.extend(clean_market_symbol(part) for part in custom_tickers.replace("\n", ",").split(",") if part.strip())
+    return unique_symbols(tickers)
+
+
+def ticker_batch(tickers: list[str], start_at: int, batch_size: int) -> list[str]:
+    if not tickers:
+        return []
+    start = min(max(int(start_at), 0), max(len(tickers) - 1, 0))
+    end = min(start + max(int(batch_size), 1), len(tickers))
+    return tickers[start:end]
+
+
+def next_batch_start(start_at: int, batch_size: int, total: int) -> int:
+    if total <= 0:
+        return 0
+    next_start = int(start_at) + int(batch_size)
+    return 0 if next_start >= total else next_start
+
+
+def merge_market_scan_results(existing: pd.DataFrame, latest: pd.DataFrame) -> pd.DataFrame:
+    frames = [frame for frame in [existing, latest] if isinstance(frame, pd.DataFrame) and not frame.empty]
+    if not frames:
+        return pd.DataFrame()
+    combined = pd.concat(frames, ignore_index=True)
+    if "Ticker" in combined.columns:
+        combined = combined.drop_duplicates("Ticker", keep="last")
+    sort_columns = [column for column in ["Daily gain %", "RVOL", "AI score"] if column in combined.columns]
+    if sort_columns:
+        combined = combined.sort_values(sort_columns, ascending=False)
+    return combined.reset_index(drop=True)
 
 
 @st.cache_data(ttl=30, max_entries=60, show_spinner=False)
@@ -2651,7 +2818,7 @@ def page_scanner() -> None:
 
 
 def page_market_scan() -> None:
-    header("Market Scan", "Track core movers, indexes, S&P 500 names, global ETFs, crypto, and your own symbols.")
+    header("Market Scan", "Track core movers, S&P 500 names, global ETFs, crypto, and the full US stock universe in batches.")
 
     st.badge("Finnhub connected" if finnhub_enabled() else "Finnhub key needed for news/quotes", icon=":material/key:", color="green" if finnhub_enabled() else "orange")
 
@@ -2661,11 +2828,11 @@ def page_market_scan() -> None:
         st.dataframe(clock_df, width="stretch", hide_index=True)
 
     with st.form("market_scan_form"):
-        preset_options = ["Core movers", "S&P 500", "Watchlist", "United States", "Europe", "Asia", "Crypto"]
+        preset_options = ["Core movers", "S&P 500", "All US stocks", "Watchlist", "United States", "Europe", "Asia", "Crypto"]
         presets = st.pills(
             "Preset lists",
             preset_options,
-            default=["Core movers", "S&P 500", "Watchlist"],
+            default=["Core movers", "S&P 500", "All US stocks", "Watchlist"],
             selection_mode="multi",
         )
         custom = st.text_area(
@@ -2674,25 +2841,81 @@ def page_market_scan() -> None:
             height=80,
             placeholder="Example: NVDA, SPY, TSM, BTC-USD",
         )
-        cols = st.columns([1, 1, 2])
-        max_names = cols[0].number_input("Max names", 5, 120, 50, step=5)
-        include_news = cols[1].toggle("Show market news", value=True)
-        cols[2].caption("Free sources are best scanned in batches. Start with 30 to 60 names for smooth refreshes.")
+        cols = st.columns([1, 1, 1, 1])
+        batch_size = cols[0].number_input("Batch size", 5, 250, DEFAULT_MARKET_SCAN_BATCH, step=5)
+        start_at = cols[1].number_input(
+            "Start row",
+            0,
+            50000,
+            int(st.session_state.get("market_scan_start", 0)),
+            step=DEFAULT_MARKET_SCAN_BATCH,
+        )
+        include_etfs = cols[2].toggle("Include ETFs", value=True)
+        include_news = cols[3].toggle("Show market news", value=True)
+        st.caption("All US stocks can be thousands of names. Use Scan next batch to keep moving through the full list without freezing the app.")
         submitted = st.form_submit_button("Run market scan", type="primary", icon=":material/radar:")
 
-    if submitted or "market_scan_df" not in st.session_state:
-        tickers = market_scan_universe(list(presets or []), custom)
+    button_cols = st.columns([1, 1, 3])
+    next_batch = button_cols[0].button("Scan next batch", icon=":material/skip_next:")
+    reset_progress = button_cols[1].button("Reset progress", icon=":material/restart_alt:")
+    button_cols[2].caption("Results are accumulated and de-duplicated as you scan more batches.")
+
+    selected_presets = list(presets or [])
+    tickers = market_scan_universe(selected_presets, custom, include_etfs=include_etfs)
+    full_source = "Selected lists"
+    full_count = 0
+    if "All US stocks" in selected_presets:
+        full_symbols, full_source = full_us_market_universe(include_etfs=include_etfs, api_marker=finnhub_key_marker())
+        full_count = len(full_symbols)
+
+    if reset_progress:
+        st.session_state.market_scan_df = pd.DataFrame()
+        st.session_state.market_scan_start = 0
+        st.session_state.market_scan_batch_tickers = []
+
+    should_scan = submitted or next_batch or "market_scan_df" not in st.session_state
+    if should_scan:
+        if submitted:
+            scan_start = int(start_at)
+            accumulated = pd.DataFrame()
+        elif next_batch:
+            prior_start = int(st.session_state.get("market_scan_start", 0))
+            prior_size = int(st.session_state.get("market_scan_batch_size", batch_size))
+            scan_start = next_batch_start(prior_start, prior_size, len(tickers))
+            accumulated = st.session_state.get("market_scan_df", pd.DataFrame())
+        else:
+            scan_start = int(st.session_state.get("market_scan_start", start_at))
+            accumulated = st.session_state.get("market_scan_df", pd.DataFrame())
+
+        batch_tickers = ticker_batch(tickers, scan_start, int(batch_size))
         st.session_state.market_scan_tickers = tickers
+        st.session_state.market_scan_start = scan_start
+        st.session_state.market_scan_batch_size = int(batch_size)
+        st.session_state.market_scan_batch_tickers = batch_tickers
+        st.session_state.market_scan_next_start = next_batch_start(scan_start, int(batch_size), len(tickers))
         with st.skeleton(height=260):
-            st.session_state.market_scan_df = broad_market_scan(tuple(tickers), max_names=max_names)
+            batch_df = broad_market_scan(tuple(batch_tickers), max_names=len(batch_tickers))
+            st.session_state.market_scan_df = merge_market_scan_results(accumulated, batch_df)
 
     df = st.session_state.get("market_scan_df", pd.DataFrame())
-    tickers = st.session_state.get("market_scan_tickers", [])
+    tickers = st.session_state.get("market_scan_tickers", tickers)
+    batch_tickers = st.session_state.get("market_scan_batch_tickers", [])
+    scan_start = int(st.session_state.get("market_scan_start", 0))
+    next_start = int(st.session_state.get("market_scan_next_start", 0))
+
+    if "All US stocks" in selected_presets:
+        st.caption(f"Full universe source: {full_source}. Full-universe symbols loaded: {full_count:,}.")
+
+    current_range = "n/a"
+    if tickers and batch_tickers:
+        current_range = f"{scan_start + 1:,}-{min(scan_start + len(batch_tickers), len(tickers)):,}"
 
     status_cards(
         [
-            ("Symbols queued", str(len(tickers)), "calm"),
-            ("Rows returned", str(len(df)), "good"),
+            ("Universe queued", f"{len(tickers):,}", "calm"),
+            ("Current batch", current_range, "good"),
+            ("Rows kept", str(len(df)), "good"),
+            ("Next start", f"{next_start:,}", "calm"),
             ("Top mover", str(df.iloc[0]["Ticker"]) if not df.empty else "n/a", "hot"),
             ("Best gain", pct(df.iloc[0]["Daily gain %"]) if not df.empty else "n/a", "good"),
         ]
