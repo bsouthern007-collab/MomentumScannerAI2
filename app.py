@@ -1615,6 +1615,18 @@ def ai_action_summary(analysis: dict[str, Any]) -> tuple[str, str]:
     buy_zone = analysis.get("Buy zone", "the buy zone")
     stop = analysis.get("Stop", "the stop")
     target = analysis.get("Target 1", "target 1")
+    score = safe_float(analysis.get("AI score"), 0) or 0
+    warnings = [str(warning) for warning in analysis.get("Warnings", [])]
+    major_rule_misses = sum(
+        any(fragment in warning for fragment in ["outside the preferred", "over 10 million", "not cleared the 10%"])
+        for warning in warnings
+    )
+
+    if score < 50 or major_rule_misses >= 2:
+        return (
+            "Study only",
+            f"{ticker} is useful to watch, but it does not cleanly match the low-priced momentum playbook right now. Treat it as market context unless the scanner rules, news, volume, and risk line up.",
+        )
 
     if status == "Breakout trigger":
         return (
@@ -1645,7 +1657,15 @@ def ai_action_summary(analysis: dict[str, Any]) -> tuple[str, str]:
 def render_ai_decision_panel(analysis: dict[str, Any]) -> None:
     label, message = ai_action_summary(analysis)
     status = live_status(analysis)
-    color = "green" if status in {"Breakout trigger", "In buy zone"} else "orange" if status in {"Near buy zone", "Momentum active"} else "gray"
+    color = "gray"
+    if label == "Plan invalid":
+        color = "red"
+    elif label == "Study only":
+        color = "gray"
+    elif status in {"Breakout trigger", "In buy zone"}:
+        color = "green"
+    elif status in {"Near buy zone", "Momentum active"}:
+        color = "orange"
     with st.container(border=True):
         st.badge(label, icon=":material/psychology:", color=color)
         st.write(message)
