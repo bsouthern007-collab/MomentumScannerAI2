@@ -2675,12 +2675,13 @@ def page_backtester() -> None:
 def page_learn() -> None:
     header("Learn", "A practical day-trading study guide for the scanner, charts, news, risk, and journaling.")
 
-    track = st.segmented_control(
+    track = st.selectbox(
         "Learning track",
-        ["Playbook", "Chart reading", "Risk", "News", "Practice", "iPad"],
-        default="Playbook",
+        ["Playbook", "Routine", "Chart reading", "Risk", "News", "Practice", "Glossary", "iPad"],
+        index=0,
         width="stretch",
     )
+    track = track or "Playbook"
 
     if track == "Playbook":
         cols = st.columns(2)
@@ -2708,6 +2709,34 @@ def page_learn() -> None:
             st.write("3. Open Charts and confirm 1-minute/5-minute trend, VWAP, volume, and news catalyst.")
             st.write("4. Write the entry, stop, and target before any paper trade.")
             st.write("5. Save the result in Journal and review what happened.")
+
+    elif track == "Routine":
+        cols = st.columns(3)
+        with cols[0]:
+            with st.container(border=True):
+                st.markdown("**Before the open**")
+                st.write("- Build a short watchlist instead of chasing every mover.")
+                st.write("- Check news, float, relative volume, and whether the ticker is easy to borrow or has special risk.")
+                st.write("- Mark the levels where the idea works and where it is wrong.")
+        with cols[1]:
+            with st.container(border=True):
+                st.markdown("**During the open**")
+                st.write("- Wait for the first clean setup instead of buying the first candle.")
+                st.write("- Prefer entries near planned levels with volume confirmation.")
+                st.write("- If the spread is wide or candles are chaotic, stand aside.")
+        with cols[2]:
+            with st.container(border=True):
+                st.markdown("**After the session**")
+                st.write("- Journal the plan, result, and whether you followed the rules.")
+                st.write("- Review screenshots of entries you skipped and entries you took.")
+                st.write("- Improve one rule at a time instead of changing everything.")
+
+        with st.container(border=True):
+            st.markdown("**Review questions**")
+            st.write("- Was the trade actually part of the scanner playbook?")
+            st.write("- Did the entry happen near the buy zone or after a clean trigger?")
+            st.write("- Did news and volume support the move?")
+            st.write("- Was the risk small enough to repeat the setup many times?")
 
     elif track == "Chart reading":
         cols = st.columns(3)
@@ -2797,6 +2826,20 @@ def page_learn() -> None:
                     completed += 1
             st.progress(completed / len(checks))
             st.caption(f"{completed} of {len(checks)} practice checks complete.")
+
+    elif track == "Glossary":
+        terms = pd.DataFrame(
+            [
+                {"Term": "Gapper", "Meaning": "A stock opening or trading far above the prior close.", "Why it matters": "It can reveal fresh demand, but late entries can fade fast."},
+                {"Term": "Float", "Meaning": "Shares available for public trading.", "Why it matters": "Lower float can move faster because there is less supply."},
+                {"Term": "RVOL", "Meaning": "Relative volume compared with normal trading volume.", "Why it matters": "High RVOL shows unusual attention today."},
+                {"Term": "VWAP", "Meaning": "Volume-weighted average price.", "Why it matters": "Many traders use it as an intraday control line."},
+                {"Term": "Entry trigger", "Meaning": "The level that confirms buyers are stepping in.", "Why it matters": "It helps avoid buying only because price is moving."},
+                {"Term": "Stop", "Meaning": "The level where the idea is invalid.", "Why it matters": "It defines risk before the trade."},
+                {"Term": "R multiple", "Meaning": "Reward or loss measured against the planned risk.", "Why it matters": "It lets you compare trades fairly."},
+            ]
+        )
+        st.dataframe(terms, width="stretch", hide_index=True)
 
     elif track == "iPad":
         cols = st.columns(2)
