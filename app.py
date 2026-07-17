@@ -3179,13 +3179,154 @@ def page_learn() -> None:
 
     track = st.selectbox(
         "Learning track",
-        ["Playbook", "Routine", "Chart reading", "Risk", "News", "Practice", "Glossary", "iPad"],
+        [
+            "Start here",
+            "Place a paper trade",
+            "Order ticket",
+            "Playbook",
+            "Routine",
+            "Chart reading",
+            "Risk",
+            "News",
+            "Practice",
+            "Glossary",
+            "iPad",
+        ],
         index=0,
         width="stretch",
     )
-    track = track or "Playbook"
+    track = track or "Start here"
 
-    if track == "Playbook":
+    if track == "Start here":
+        st.warning(
+            "Begin in paper trading. Do not place real orders until you understand order types, broker rules, risk, and how fast losses can happen.",
+            icon=":material/warning:",
+        )
+        cols = st.columns(3)
+        with cols[0]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**1. Learn the screen**")
+                st.write("- Dashboard shows the best current study idea.")
+                st.write("- Market Scan checks big lists like S&P 500 and all US stocks in batches.")
+                st.write("- Scanner focuses on the low-priced momentum rules.")
+                st.write("- Charts shows candles, VWAP, EMAs, news, and plan levels.")
+        with cols[1]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**2. Learn the plan**")
+                st.write("- Buy zone is where a pullback still looks controlled.")
+                st.write("- Entry trigger is the level where buyers confirm strength.")
+                st.write("- Stop is where the idea is wrong.")
+                st.write("- Target is where reward starts to justify the risk.")
+        with cols[2]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**3. Practice the workflow**")
+                st.write("- Pick one ticker from Scanner or Market Scan.")
+                st.write("- Open Charts and check trend, volume, news, and levels.")
+                st.write("- Open Trade Desk and stage a paper order.")
+                st.write("- Save the result in Journal after the trade is done.")
+
+        with st.container(border=True):
+            st.markdown("**The app workflow for a brand-new trader**")
+            st.write("1. Go to Market Scan to see what the broad market and big names are doing.")
+            st.write("2. Go to Scanner for small-cap momentum candidates that match the app rules.")
+            st.write("3. Click a ticker row, then open Charts to inspect the candle trend and plan levels.")
+            st.write("4. Read the AI decision. If it says Study only or Watch only, do not force a trade.")
+            st.write("5. Open Trade Desk, set your max paper risk, review the staged order, and only approve if every checklist item makes sense.")
+            st.write("6. Open Journal and record what happened, even if you skipped the trade.")
+
+        with st.container(border=True):
+            st.markdown("**Beginner safety rules**")
+            st.write("- A stock moving fast is not automatically a good trade.")
+            st.write("- A plan has entry, stop, target, share size, and a reason before the order is placed.")
+            st.write("- Market orders can fill at a worse price than expected in fast stocks.")
+            st.write("- Limit and stop orders still need care; different brokers support different instructions.")
+            st.write("- Real day trading can trigger broker, margin, tax, and pattern day trader rules.")
+
+    elif track == "Place a paper trade":
+        st.info(
+            "This section teaches the paper-trade process. It is a practice workflow, not a recommendation to buy or sell any stock.",
+            icon=":material/school:",
+        )
+        cols = st.columns(2)
+        with cols[0]:
+            with st.container(border=True):
+                st.markdown("**Before you stage the order**")
+                st.write("1. Pick a ticker from Scanner or Market Scan.")
+                st.write("2. Open Charts and confirm the 1-minute or 5-minute candle trend.")
+                st.write("3. Check that price is not far above the buy zone.")
+                st.write("4. Check news, volume, RVOL, float, and spread risk.")
+                st.write("5. Decide your max paper risk before thinking about shares.")
+        with cols[1]:
+            with st.container(border=True):
+                st.markdown("**Inside Trade Desk**")
+                st.write("1. Enter the ticker.")
+                st.markdown(markdown_text("2. Set Max paper risk, like $10, $25, or $50."))
+                st.write("3. Choose the lookback and candle size.")
+                st.write("4. Read the AI decision and setup checks.")
+                st.write("5. Review Entry, Stop, Target, Shares, and Reason before approval.")
+
+        with st.container(border=True):
+            st.markdown("**Position size in plain English**")
+            st.markdown(markdown_text("If entry is $5.00 and stop is $4.75, the risk is $0.25 per share."))
+            st.markdown(markdown_text("If max paper risk is $25, then $25 / $0.25 = 100 shares."))
+            st.write("If the stop is farther away, share size should be smaller. If you cannot accept the loss at the stop, the trade is too large.")
+
+        with st.container(border=True):
+            st.markdown("**What to do after approval**")
+            st.write("- Paper order approved: the app saves it to Trade Desk and Journal.")
+            st.write("- If price reaches the stop: mark the paper trade as invalid and record the planned loss.")
+            st.write("- If price reaches target 1: record what happened and whether the plan was followed.")
+            st.write("- If price never triggers: write 'no trade' in your notes. Skipping is part of trading.")
+
+        with st.container(border=True):
+            st.markdown("**Do not approve if...**")
+            st.write("- You cannot explain why the stock is moving.")
+            st.write("- The AI says Study only, Watch only, or Plan invalid.")
+            st.write("- The entry is far above the buy zone and you would be chasing.")
+            st.write("- The spread is wide, candles are erratic, or news is unclear.")
+            st.write("- You are increasing size because you want to make back a loss.")
+
+    elif track == "Order ticket":
+        cols = st.columns(2)
+        with cols[0]:
+            with st.container(border=True):
+                st.markdown("**Common broker ticket fields**")
+                st.write("- Symbol: the ticker, like NVDA or SOUN.")
+                st.write("- Side: buy, sell, sell short, or buy to cover.")
+                st.write("- Quantity: how many shares.")
+                st.write("- Order type: market, limit, stop, or stop-limit.")
+                st.write("- Time in force: how long the order stays active.")
+                st.write("- Review: final confirmation before sending.")
+        with cols[1]:
+            with st.container(border=True):
+                st.markdown("**Order types for beginners**")
+                st.write("- Market order: tries to fill immediately, but the final price can be different from what you saw.")
+                st.write("- Limit order: sets the worst price you are willing to accept.")
+                st.write("- Stop order: triggers after a stop price is reached, then can become a market order.")
+                st.write("- Stop-limit order: triggers after a stop price, but only fills inside your limit.")
+                st.write("- Not every broker supports every order instruction the same way.")
+
+        with st.container(border=True):
+            st.markdown("**How the app's staged paper order maps to a broker ticket**")
+            mapping = pd.DataFrame(
+                [
+                    {"App field": "Ticker", "Broker ticket field": "Symbol", "Beginner meaning": "The stock you are practicing."},
+                    {"App field": "Side", "Broker ticket field": "Action", "Beginner meaning": "Usually Buy for this paper long setup."},
+                    {"App field": "Shares", "Broker ticket field": "Quantity", "Beginner meaning": "Calculated from max paper risk and stop distance."},
+                    {"App field": "Entry", "Broker ticket field": "Stop or limit price", "Beginner meaning": "The confirmation level, not a guarantee."},
+                    {"App field": "Stop", "Broker ticket field": "Stop-loss plan", "Beginner meaning": "Where the idea is wrong."},
+                    {"App field": "Target 1", "Broker ticket field": "Target/exit plan", "Beginner meaning": "Where reward begins to pay for the risk."},
+                ]
+            )
+            st.dataframe(mapping, width="stretch", hide_index=True)
+
+        with st.container(border=True):
+            st.markdown("**Real-order caution**")
+            st.write("- The app records paper trades. It does not place real broker orders by itself.")
+            st.write("- Before real trading, confirm your broker's order types, margin rules, fees, and day-trading restrictions.")
+            st.write("- Always review the broker confirmation screen before sending any real order.")
+
+    elif track == "Playbook":
         cols = st.columns(2)
         with cols[0]:
             with st.container(border=True):
@@ -3340,6 +3481,16 @@ def page_learn() -> None:
     elif track == "Glossary":
         terms = pd.DataFrame(
             [
+                {"Term": "Paper trade", "Meaning": "A practice trade that records the plan without risking real money.", "Why it matters": "New traders can learn the process before using real capital."},
+                {"Term": "Order ticket", "Meaning": "The broker screen where symbol, side, quantity, order type, and prices are entered.", "Why it matters": "Most costly mistakes happen when the ticket is rushed or misunderstood."},
+                {"Term": "Market order", "Meaning": "An order that tries to fill right away at the available market price.", "Why it matters": "It can fill at a different price than expected in fast stocks."},
+                {"Term": "Limit order", "Meaning": "An order that sets the worst price you are willing to accept.", "Why it matters": "It gives price control, but it may not fill."},
+                {"Term": "Stop order", "Meaning": "An order that activates after a stop price is reached.", "Why it matters": "Some stop orders can become market orders after triggering."},
+                {"Term": "Stop-limit order", "Meaning": "A stop order that becomes a limit order after the stop price is reached.", "Why it matters": "It controls price but can miss the fill if price moves too fast."},
+                {"Term": "Bid", "Meaning": "The highest displayed price buyers are currently offering.", "Why it matters": "Sellers often transact near the bid."},
+                {"Term": "Ask", "Meaning": "The lowest displayed price sellers are currently offering.", "Why it matters": "Buyers often transact near the ask."},
+                {"Term": "Spread", "Meaning": "The gap between bid and ask.", "Why it matters": "Wide spreads make entries and exits more expensive and harder to control."},
+                {"Term": "Time in force", "Meaning": "How long an order stays active, such as day-only or good-till-canceled.", "Why it matters": "A forgotten open order can create surprises."},
                 {"Term": "Gapper", "Meaning": "A stock opening or trading far above the prior close.", "Why it matters": "It can reveal fresh demand, but late entries can fade fast."},
                 {"Term": "Float", "Meaning": "Shares available for public trading.", "Why it matters": "Lower float can move faster because there is less supply."},
                 {"Term": "RVOL", "Meaning": "Relative volume compared with normal trading volume.", "Why it matters": "High RVOL shows unusual attention today."},
@@ -3347,6 +3498,7 @@ def page_learn() -> None:
                 {"Term": "Entry trigger", "Meaning": "The level that confirms buyers are stepping in.", "Why it matters": "It helps avoid buying only because price is moving."},
                 {"Term": "Stop", "Meaning": "The level where the idea is invalid.", "Why it matters": "It defines risk before the trade."},
                 {"Term": "R multiple", "Meaning": "Reward or loss measured against the planned risk.", "Why it matters": "It lets you compare trades fairly."},
+                {"Term": "Pattern day trader rule", "Meaning": "A broker/margin-account rule that can apply to frequent day trading.", "Why it matters": "Real traders must check broker rules before day trading with margin."},
             ]
         )
         st.dataframe(terms, width="stretch", hide_index=True)
