@@ -6,13 +6,6 @@ headless = true
 address = "localhost"
 
 [theme]
-base = "light"
-primaryColor = "#00C805"
-backgroundColor = "#F7F8FA"
-secondaryBackgroundColor = "#FFFFFF"
-textColor = "#101418"
-linkColor = "#047857"
-borderColor = "#D9E0E8"
 showWidgetBorder = true
 showSidebarBorder = true
 baseRadius = "8px"
@@ -21,18 +14,52 @@ font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;70
 headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap"
 codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
 baseFontSize = 15
-headingFontWeights = [650, 650, 600, 600, 600, 600]
-greenColor = "#00A854"
-redColor = "#E5484D"
-orangeColor = "#F59E0B"
+headingFontWeights = [700, 700, 600, 600, 600, 600]
+linkUnderline = false
+chartCategoricalColors = ["#00A854", "#38BDF8", "#F59E0B", "#A78BFA", "#FF375F", "#14B8A6", "#94A3B8"]
+
+[theme.light]
+primaryColor = "#008F2D"
+backgroundColor = "#F7F8FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#101418"
+linkColor = "#047857"
+borderColor = "#D9E0E8"
+dataframeBorderColor = "#D9E0E8"
+dataframeHeaderBackgroundColor = "#EEF3F7"
+greenColor = "#008F2D"
+redColor = "#D92D20"
+orangeColor = "#B45309"
 blueColor = "#2563EB"
 violetColor = "#7C3AED"
 grayColor = "#64748B"
-chartCategoricalColors = ["#00C805", "#2563EB", "#F59E0B", "#7C3AED", "#E5484D", "#0891B2", "#64748B"]
 
-[theme.sidebar]
+[theme.dark]
+primaryColor = "#00A854"
+backgroundColor = "#090C10"
+secondaryBackgroundColor = "#111820"
+textColor = "#F3F7FA"
+linkColor = "#67E8F9"
+borderColor = "#283442"
+dataframeBorderColor = "#283442"
+dataframeHeaderBackgroundColor = "#151E29"
+greenColor = "#00C805"
+redColor = "#FF375F"
+orangeColor = "#F59E0B"
+blueColor = "#38BDF8"
+violetColor = "#A78BFA"
+grayColor = "#94A3B8"
+
+[theme.light.sidebar]
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F1F5F9"
 borderColor = "#D9E0E8"
 textColor = "#101418"
+primaryColor = "#008F2D"
+
+[theme.dark.sidebar]
+backgroundColor = "#0C1117"
+secondaryBackgroundColor = "#141C26"
+borderColor = "#283442"
+textColor = "#F3F7FA"
 primaryColor = "#00A854"

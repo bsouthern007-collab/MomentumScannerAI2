@@ -11,6 +11,16 @@ Default scanner rules:
 
 The app includes learning data so it never opens blank, plus optional live data.
 
+## Streamlit Cloud
+
+Use this as the main file path when deploying:
+
+```text
+app.py
+```
+
+If your app is already set to the older uploaded-folder path, it will still forward into the root app. For new deployments, `app.py` is cleaner.
+
 ## Add your Finnhub key
 
 Do not paste API keys into chat.
@@ -24,3 +34,11 @@ FINNHUB_API_KEY = "your_key_here"
 ```
 
 Restart the app after saving. Finnhub turns on better live quotes and stock news.
+
+## Quick local check
+
+```text
+.venv\Scripts\python.exe tests\smoke_app.py
+```
+
+That checks the scanner, AI plan, and backtester without making live trades.

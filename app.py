@@ -945,6 +945,8 @@ def run_scan(
     if prefer_live:
         live_rows = live_screener_rows(min_price, max_price, min_gain_pct)
         for row in live_rows:
+            if not row_matches_rules(row, rules):
+                continue
             history, _ = load_history(row["Ticker"], period="3mo", interval="1d", prefer_live=True)
             plan = build_trade_plan(row, history) if not history.empty else {}
             score, setup, confidence, reasons, warnings = score_setup(row, plan) if plan else (0, "Live watch", "Low", [], [])
@@ -961,8 +963,9 @@ def run_scan(
                     f"and only consider a paper entry after {plan.get('Entry trigger', 'confirmation')}."
                 ),
             }
-            if row_matches_rules(enriched, rules):
-                rows.append(enriched)
+            rows.append(enriched)
+            if len(rows) >= 12:
+                break
 
     if (not prefer_live) or (not rows and include_learning):
         for profile in DEMO_PROFILES:
@@ -1358,34 +1361,110 @@ def backtest_strategy(
     }
 
 
-def apply_style() -> None:
+def theme_palette(mode: str | None = None) -> dict[str, str]:
+    mode = (mode or st.session_state.get("display_mode", "Dark")).lower()
+    if mode == "light":
+        return {
+            "app_bg": "#F7F8FA",
+            "panel": "#FFFFFF",
+            "panel_alt": "#F1F5F9",
+            "border": "#D9E0E8",
+            "text": "#101418",
+            "muted": "#475569",
+            "muted_soft": "#64748B",
+            "shadow": "rgba(15, 23, 42, 0.08)",
+            "hero": "linear-gradient(135deg, #FFFFFF 0%, #F1F8F4 58%, #EFF6FF 100%)",
+            "up": "#008F2D",
+            "up_bright": "#00A854",
+            "down": "#D92D20",
+            "blue": "#2563EB",
+            "cyan": "#0891B2",
+            "violet": "#7C3AED",
+            "orange": "#B45309",
+            "grid": "#DDE5EE",
+        }
+    return {
+        "app_bg": "#090C10",
+        "panel": "#111820",
+        "panel_alt": "#0F151D",
+        "border": "#293546",
+        "text": "#F3F7FA",
+        "muted": "#B7C2D0",
+        "muted_soft": "#A8B3C2",
+        "shadow": "rgba(0, 0, 0, 0.28)",
+        "hero": "linear-gradient(135deg, #121A24 0%, #0B1118 72%)",
+        "up": "#00C805",
+        "up_bright": "#00C805",
+        "down": "#FF375F",
+        "blue": "#38BDF8",
+        "cyan": "#22D3EE",
+        "violet": "#A78BFA",
+        "orange": "#F59E0B",
+        "grid": "#223041",
+    }
+
+
+def display_mode_control() -> str:
+    options = ["Dark", "Light"]
+    default = st.session_state.get("display_mode", "Dark")
+    index = options.index(default) if default in options else 0
+    with st.sidebar:
+        mode = st.selectbox(
+            "Display mode",
+            options,
+            index=index,
+            key="display_mode",
+        )
+    return str(mode or default)
+
+
+def apply_style(mode: str | None = None) -> None:
+    palette = theme_palette(mode)
     st.markdown(
-        """
+        f"""
         <style>
-        .block-container {max-width: 1320px; padding-top: 1.15rem; padding-bottom: 3rem;}
-        h1, h2, h3 {letter-spacing: 0;}
-        [data-testid="stMetric"] {
-            background: #ffffff;
-            border: 1px solid #d9e0e8;
+        :root {{
+            --msa-app-bg: {palette["app_bg"]};
+            --msa-panel: {palette["panel"]};
+            --msa-panel-alt: {palette["panel_alt"]};
+            --msa-border: {palette["border"]};
+            --msa-text: {palette["text"]};
+            --msa-muted: {palette["muted"]};
+            --msa-muted-soft: {palette["muted_soft"]};
+            --msa-shadow: {palette["shadow"]};
+            --msa-up: {palette["up"]};
+            --msa-down: {palette["down"]};
+            --msa-blue: {palette["blue"]};
+            --msa-orange: {palette["orange"]};
+        }}
+        .stApp {{background: var(--msa-app-bg);}}
+        .block-container {{max-width: 1320px; padding-top: 1.15rem; padding-bottom: 3rem;}}
+        h1, h2, h3 {{letter-spacing: 0; color: var(--msa-text);}}
+        [data-testid="stMetric"] {{
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            border: 1px solid var(--msa-border);
             border-radius: 8px;
             padding: 15px 16px;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
-        }
-        div[data-testid="stMetricValue"] {font-weight: 700;}
-        div[data-testid="stDataFrame"] {border: 1px solid #d9e0e8; border-radius: 8px; overflow: hidden;}
-        .stAlert {border-radius: 8px;}
-        .msa-hero {
+            box-shadow: 0 18px 36px var(--msa-shadow);
+        }}
+        div[data-testid="stMetricLabel"] {{color: var(--msa-muted-soft);}}
+        div[data-testid="stMetricValue"] {{font-weight: 750; color: var(--msa-text);}}
+        div[data-testid="stMetricDelta"] {{font-weight: 650;}}
+        div[data-testid="stDataFrame"] {{border: 1px solid var(--msa-border); border-radius: 8px; overflow: hidden;}}
+        .stAlert {{border-radius: 8px;}}
+        .msa-hero {{
             position: relative;
             overflow: hidden;
-            border: 1px solid #d9e0e8;
+            border: 1px solid var(--msa-border);
             border-radius: 8px;
             padding: 26px 28px;
             background:
-                linear-gradient(120deg, rgba(0, 200, 5, 0.12), rgba(37, 99, 235, 0.10)),
-                #ffffff;
-            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
-        }
-        .msa-hero:after {
+                radial-gradient(circle at 18% -10%, rgba(0, 200, 5, 0.20), transparent 30%),
+                radial-gradient(circle at 85% 20%, rgba(56, 189, 248, 0.18), transparent 34%),
+                {palette["hero"]};
+            box-shadow: 0 24px 60px var(--msa-shadow);
+        }}
+        .msa-hero:after {{
             content: "";
             position: absolute;
             inset: auto -20% -48px -20%;
@@ -1394,32 +1473,32 @@ def apply_style() -> None:
                 linear-gradient(90deg, transparent 0%, rgba(0, 168, 84, 0.25) 35%, rgba(37, 99, 235, 0.22) 55%, transparent 100%);
             animation: msa-pulse 5.5s ease-in-out infinite;
             transform: skewY(-3deg);
-        }
-        @keyframes msa-pulse {
-            0%, 100% {transform: translateX(-18%) skewY(-3deg); opacity: .55;}
-            50% {transform: translateX(18%) skewY(-3deg); opacity: .95;}
-        }
-        .msa-hero h1 {margin: 0 0 8px 0; font-size: 2.5rem; line-height: 1.05;}
-        .msa-hero p {max-width: 820px; margin: 0; color: #475569; font-size: 1.02rem;}
-        .msa-status-row {
+        }}
+        @keyframes msa-pulse {{
+            0%, 100% {{transform: translateX(-18%) skewY(-3deg); opacity: .55;}}
+            50% {{transform: translateX(18%) skewY(-3deg); opacity: .95;}}
+        }}
+        .msa-hero h1 {{margin: 0 0 8px 0; font-size: 2.5rem; line-height: 1.05;}}
+        .msa-hero p {{max-width: 820px; margin: 0; color: var(--msa-muted); font-size: 1.02rem;}}
+        .msa-status-row {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
             gap: 12px;
             margin: 14px 0 16px 0;
-        }
-        .msa-status-card {
-            border: 1px solid #d9e0e8;
-            background: #ffffff;
+        }}
+        .msa-status-card {{
+            border: 1px solid var(--msa-border);
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
             border-radius: 8px;
             padding: 14px 16px;
-            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.045);
-        }
-        .msa-label {font-size: .78rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em;}
-        .msa-value {font-size: 1.4rem; font-weight: 750; color: #101418; margin-top: 4px;}
-        .msa-good {border-left: 4px solid #00a854;}
-        .msa-hot {border-left: 4px solid #f59e0b;}
-        .msa-calm {border-left: 4px solid #2563eb;}
-        .msa-danger {border-left: 4px solid #e5484d;}
+            box-shadow: 0 18px 36px var(--msa-shadow);
+        }}
+        .msa-label {{font-size: .78rem; color: var(--msa-muted-soft); text-transform: uppercase; letter-spacing: .04em;}}
+        .msa-value {{font-size: 1.4rem; font-weight: 750; color: var(--msa-text); margin-top: 4px;}}
+        .msa-good {{border-left: 4px solid var(--msa-up);}}
+        .msa-hot {{border-left: 4px solid var(--msa-orange);}}
+        .msa-calm {{border-left: 4px solid var(--msa-blue);}}
+        .msa-danger {{border-left: 4px solid var(--msa-down);}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1584,13 +1663,22 @@ def render_plotly_trading_chart(
     if go is None or make_subplots is None:
         return
 
-    chart_height = max(height + 250, 720)
+    chart_height = max(height + 280, 760)
+    palette = theme_palette()
+    is_light = st.session_state.get("display_mode", "Dark") == "Light"
+    chart_bg = palette["app_bg"]
+    panel_bg = palette["panel"]
+    grid = palette["grid"]
+    text = palette["text"]
+    muted = palette["muted_soft"]
+    up = palette["up_bright"]
+    down = palette["down"]
     fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.74, 0.26],
+        vertical_spacing=0.018,
+        row_heights=[0.76, 0.24],
     )
 
     fig.add_trace(
@@ -1601,20 +1689,18 @@ def render_plotly_trading_chart(
             low=chart_df["Low"],
             close=chart_df["Close"],
             name="Candles",
-            increasing_line_color="#059669",
-            increasing_fillcolor="#10b981",
-            decreasing_line_color="#dc2626",
-            decreasing_fillcolor="#ef4444",
-            whiskerwidth=0.45,
+            increasing=dict(line=dict(color=up, width=1.35), fillcolor=up),
+            decreasing=dict(line=dict(color=down, width=1.35), fillcolor=down),
+            whiskerwidth=0.65,
         ),
         row=1,
         col=1,
     )
 
     for line_name, color, width in [
-        ("EMA 9", "#2563eb", 1.7),
-        ("EMA 20", "#7c3aed", 1.7),
-        ("VWAP", "#f59e0b", 2.0),
+        ("EMA 9", palette["blue"], 1.7),
+        ("EMA 20", palette["violet"], 1.7),
+        ("VWAP", palette["orange"], 2.1),
     ]:
         fig.add_trace(
             go.Scatter(
@@ -1629,7 +1715,11 @@ def render_plotly_trading_chart(
             col=1,
         )
 
-    volume_colors = np.where(chart_df["Close"] >= chart_df["Open"], "#34d399", "#f87171")
+    volume_colors = np.where(
+        chart_df["Close"] >= chart_df["Open"],
+        "rgba(0, 200, 5, 0.58)" if not is_light else "rgba(0, 143, 45, 0.55)",
+        "rgba(255, 55, 95, 0.58)" if not is_light else "rgba(217, 45, 32, 0.50)",
+    )
     fig.add_trace(
         go.Bar(
             x=chart_df["Time"],
@@ -1653,7 +1743,7 @@ def render_plotly_trading_chart(
             x1=end_time,
             y0=buy_low,
             y1=buy_high,
-            fillcolor="rgba(8, 145, 178, 0.12)",
+            fillcolor="rgba(34, 211, 238, 0.14)" if not is_light else "rgba(8, 145, 178, 0.12)",
             line=dict(width=0),
             layer="below",
             row=1,
@@ -1671,39 +1761,99 @@ def render_plotly_trading_chart(
             line_width=1.2,
             annotation_text=f"{label} {money(price)}",
             annotation_position="top right",
+            annotation_font_color=color,
+            annotation_bgcolor="rgba(9, 12, 16, 0.86)" if not is_light else "rgba(255, 255, 255, 0.90)",
+            annotation_bordercolor=color,
             row=1,
             col=1,
         )
 
-    add_level("Current", current_price, "#111827", "solid")
-    add_level("Buy low", analysis.get("Buy low"), "#0891b2")
-    add_level("Buy high", analysis.get("Buy high"), "#0891b2")
-    add_level("Stop", analysis.get("Stop price"), "#dc2626")
-    add_level("Target 1", analysis.get("Target 1 price"), "#16a34a")
-    add_level("Previous close", analysis.get("Previous close"), "#6b7280")
+    add_level("Current", current_price, text, "solid")
+    add_level("Buy low", analysis.get("Buy low"), palette["cyan"])
+    add_level("Buy high", analysis.get("Buy high"), palette["cyan"])
+    add_level("Stop", analysis.get("Stop price"), down)
+    add_level("Target 1", analysis.get("Target 1 price"), up)
+    add_level("Previous close", analysis.get("Previous close"), muted)
 
     fig.update_layout(
         height=chart_height,
-        margin=dict(l=8, r=8, t=34, b=8),
-        template="plotly_white",
+        margin=dict(l=8, r=72, t=40, b=8),
+        template="plotly_white" if is_light else "plotly_dark",
+        paper_bgcolor=chart_bg,
+        plot_bgcolor=panel_bg,
+        font=dict(color=text, family="Inter, Arial, sans-serif", size=12),
         dragmode="pan",
         hovermode="x unified",
         bargap=0,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        xaxis_rangeslider_visible=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(255, 255, 255, 0.78)" if is_light else "rgba(9, 12, 16, 0.70)",
+            bordercolor=palette["border"],
+            borderwidth=1,
+        ),
+        hoverlabel=dict(bgcolor=palette["panel"], bordercolor=palette["border"], font_color=text),
+        uirevision=f"{analysis.get('Ticker', 'chart')}-trading-chart",
+        xaxis_rangeslider_visible=False,
+        modebar=dict(bgcolor="rgba(9, 12, 16, 0)" if not is_light else "rgba(255, 255, 255, 0)", color=muted, activecolor=up),
     )
-    fig.update_xaxes(showspikes=True, spikemode="across", spikesnap="cursor", showline=True, row=1, col=1)
     fig.update_xaxes(
         showspikes=True,
         spikemode="across",
         spikesnap="cursor",
+        spikecolor=muted,
+        spikethickness=1,
         showline=True,
-        rangeslider_visible=True,
+        linecolor=palette["border"],
+        gridcolor=grid,
+        zeroline=False,
+        rangeslider_visible=False,
+        row=1,
+        col=1,
+    )
+    fig.update_xaxes(
+        showspikes=True,
+        spikemode="across",
+        spikesnap="cursor",
+        spikecolor=muted,
+        spikethickness=1,
+        showline=True,
+        linecolor=palette["border"],
+        gridcolor=grid,
+        zeroline=False,
+        rangeslider_visible=False,
         row=2,
         col=1,
     )
-    fig.update_yaxes(title_text="Price", fixedrange=False, row=1, col=1)
-    fig.update_yaxes(title_text="Volume", fixedrange=False, row=2, col=1)
+    visible_high = float(chart_df["High"].max())
+    visible_low = float(chart_df["Low"].min())
+    pad = max((visible_high - visible_low) * 0.08, max(current_price * 0.004, 0.03))
+    volume_max = max(float(chart_df["Volume"].max()), 1.0)
+    fig.update_yaxes(
+        title_text="Price",
+        fixedrange=False,
+        side="right",
+        showgrid=True,
+        gridcolor=grid,
+        zeroline=False,
+        range=[visible_low - pad, visible_high + pad],
+        row=1,
+        col=1,
+    )
+    fig.update_yaxes(
+        title_text="Volume",
+        fixedrange=False,
+        side="right",
+        showgrid=True,
+        gridcolor=grid,
+        zeroline=False,
+        range=[0, volume_max * 1.18],
+        row=2,
+        col=1,
+    )
 
     st.plotly_chart(
         fig,
@@ -1711,7 +1861,10 @@ def render_plotly_trading_chart(
         config={
             "scrollZoom": True,
             "displayModeBar": True,
+            "doubleClick": "reset+autosize",
             "modeBarButtonsToAdd": ["drawline", "drawrect", "eraseshape"],
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+            "displaylogo": False,
         },
     )
 
@@ -1750,10 +1903,10 @@ def render_candlestick_chart(
     latest_vwap = float(last["VWAP"]) if math.isfinite(float(last["VWAP"])) else current_price
 
     metric_cols = st.columns(4)
-    metric_cols[0].metric("Last candle", money(current_price), pct(candle_delta))
-    metric_cols[1].metric("Range high", money(range_high))
-    metric_cols[2].metric("Range low", money(range_low))
-    metric_cols[3].metric("VWAP", money(latest_vwap))
+    metric_cols[0].metric("Last candle", money(current_price), pct(candle_delta), border=True)
+    metric_cols[1].metric("Range high", money(range_high), border=True)
+    metric_cols[2].metric("Range low", money(range_low), border=True)
+    metric_cols[3].metric("VWAP", money(latest_vwap), border=True)
 
     candle_size = 13 if len(chart_df) <= 90 else 9 if len(chart_df) <= 180 else 6 if len(chart_df) <= 390 else 3
 
@@ -2103,7 +2256,8 @@ def page_dashboard() -> None:
     )
     control_cols[2].caption("Home base: scanner candidates, AI plan, market clocks, and the latest news.")
 
-    df = default_scan(prefer_live=prefer_live)
+    with st.skeleton(height=240):
+        df = default_scan(prefer_live=prefer_live)
     best = df.iloc[0].to_dict()
 
     status_cards(
@@ -2263,7 +2417,12 @@ def page_charts() -> None:
     selected_ticker = cols[0].selectbox("Ticker", sorted(set(tickers)), index=0)
     custom_ticker = cols[1].text_input("Custom ticker", value="").upper().strip()
     interval = cols[2].selectbox("Candle", ["1m", "2m", "5m", "15m", "30m", "60m", "1d"], index=0)
-    period_options = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y"]
+    if interval == "1m":
+        period_options = ["1d", "5d"]
+    elif interval in {"2m", "5m", "15m", "30m", "60m"}:
+        period_options = ["1d", "5d", "1mo", "3mo"]
+    else:
+        period_options = ["1mo", "3mo", "6mo", "1y", "2y"]
     period = cols[3].selectbox("Range", period_options, index=0)
     candle_windows = {
         "Last 90": 90,
@@ -2274,7 +2433,8 @@ def page_charts() -> None:
     control_cols = st.columns([1, 1, 1, 2])
     live_toggle = control_cols[0].toggle("Use live Yahoo chart data", value=True, key="chart_live_enabled")
     auto_refresh = control_cols[1].toggle("Auto-refresh chart", value=True, key="chart_auto_refresh_enabled")
-    window_label = control_cols[2].selectbox("Visible candles", list(candle_windows), index=1)
+    default_window_index = 0 if interval == "1m" else 1
+    window_label = control_cols[2].selectbox("Visible candles", list(candle_windows), index=default_window_index)
     ticker = custom_ticker or selected_ticker
     max_candles = candle_windows[window_label]
     prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
@@ -2628,7 +2788,8 @@ def page_learn() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="MomentumScannerAI", page_icon=":material/monitoring:", layout="wide")
-    apply_style()
+    mode = display_mode_control()
+    apply_style(mode)
     pages = [
         st.Page(page_dashboard, title="Dashboard", icon=":material/dashboard:"),
         st.Page(page_daily_gameplan, title="Daily Gameplan", icon=":material/event_note:", url_path="Daily_Gameplan"),
