@@ -1081,14 +1081,31 @@ def scan_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df[[column for column in columns if column in df.columns]]
 
 
-def show_scan_table(df: pd.DataFrame) -> None:
+def remember_selected_ticker(display_df: pd.DataFrame, event: Any) -> None:
+    try:
+        rows = list(event.selection.rows)
+    except Exception:
+        rows = []
+    if not rows or "Ticker" not in display_df.columns:
+        return
+    ticker = str(display_df.iloc[rows[0]]["Ticker"]).upper()
+    if ticker:
+        st.session_state.selected_ticker = ticker
+        st.caption(f"{ticker} selected for Charts and AI Coach.")
+
+
+def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
     if df.empty:
         st.info("No matches with the current filters.")
         return
-    st.dataframe(
-        scan_columns(df),
+    display_df = scan_columns(df)
+    event = st.dataframe(
+        display_df,
         width="stretch",
         hide_index=True,
+        key=key,
+        on_select="rerun",
+        selection_mode="single-row",
         column_config={
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
             "Daily gain %": st.column_config.NumberColumn("Gain", format="%.1f%%"),
@@ -1098,6 +1115,7 @@ def show_scan_table(df: pd.DataFrame) -> None:
             "Risk/reward": st.column_config.NumberColumn("R/R", format="%.2f"),
         },
     )
+    remember_selected_ticker(display_df, event)
 
 
 def show_broad_market_table(df: pd.DataFrame) -> None:
@@ -1119,10 +1137,14 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         "Data source",
         "Quote time",
     ]
-    st.dataframe(
-        df[[column for column in columns if column in df.columns]],
+    display_df = df[[column for column in columns if column in df.columns]]
+    event = st.dataframe(
+        display_df,
         width="stretch",
         hide_index=True,
+        key="broad_market_table",
+        on_select="rerun",
+        selection_mode="single-row",
         column_config={
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
             "Daily gain %": st.column_config.NumberColumn("Gain", format="%.2f%%"),
@@ -1131,6 +1153,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
             "AI score": st.column_config.ProgressColumn("AI score", min_value=0, max_value=100),
         },
     )
+    remember_selected_ticker(display_df, event)
 
 
 def market_clock_frame() -> pd.DataFrame:
@@ -2284,7 +2307,7 @@ def page_dashboard() -> None:
             render_news_items(finnhub_market_news("general", limit=4), "No market news returned yet.")
 
     st.subheader("Scanner candidates")
-    show_scan_table(df)
+    show_scan_table(df, key="dashboard_scan_table")
 
 
 def page_daily_gameplan() -> None:
@@ -2307,7 +2330,7 @@ def page_daily_gameplan() -> None:
     render_plan_card(best)
 
     st.subheader("Watchlist for the session")
-    show_scan_table(df)
+    show_scan_table(df, key="gameplan_scan_table")
 
     with st.container(border=True):
         st.markdown("**Risk rules**")
@@ -2352,7 +2375,7 @@ def page_scanner() -> None:
                 ("Best score", f"{int(top['AI score'])}/100", "hot"),
             ]
         )
-    show_scan_table(df)
+    show_scan_table(df, key="scanner_results_table")
 
 
 def page_market_scan() -> None:
@@ -2412,9 +2435,14 @@ def page_market_scan() -> None:
 
 def page_charts() -> None:
     header("Charts", "Chart the candidate, trend, volume, and paper-trade levels.")
+    selected_from_scan = str(st.session_state.get("selected_ticker", "")).upper().strip()
     tickers = [row["ticker"] for row in DEMO_PROFILES] + read_watchlist()
+    if selected_from_scan:
+        tickers.append(selected_from_scan)
+    ticker_options = sorted(set(tickers))
+    selected_index = ticker_options.index(selected_from_scan) if selected_from_scan in ticker_options else 0
     cols = st.columns([1, 1, 1, 1])
-    selected_ticker = cols[0].selectbox("Ticker", sorted(set(tickers)), index=0)
+    selected_ticker = cols[0].selectbox("Ticker", ticker_options, index=selected_index)
     custom_ticker = cols[1].text_input("Custom ticker", value="").upper().strip()
     interval = cols[2].selectbox("Candle", ["1m", "2m", "5m", "15m", "30m", "60m", "1d"], index=0)
     if interval == "1m":
@@ -2436,6 +2464,7 @@ def page_charts() -> None:
     default_window_index = 0 if interval == "1m" else 1
     window_label = control_cols[2].selectbox("Visible candles", list(candle_windows), index=default_window_index)
     ticker = custom_ticker or selected_ticker
+    st.session_state.selected_ticker = ticker
     max_candles = candle_windows[window_label]
     prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
 
