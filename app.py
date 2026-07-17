@@ -2064,6 +2064,54 @@ def apply_style(mode: str | None = None) -> None:
         .msa-hot {{border-left: 4px solid var(--msa-orange);}}
         .msa-calm {{border-left: 4px solid var(--msa-blue);}}
         .msa-danger {{border-left: 4px solid var(--msa-down);}}
+        .msa-level-board {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin: 10px 0 14px 0;
+        }}
+        .msa-level-card {{
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--msa-border);
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            border-radius: 8px;
+            padding: 15px 16px 14px 16px;
+            box-shadow: 0 18px 36px var(--msa-shadow);
+            min-height: 122px;
+        }}
+        .msa-level-card:before {{
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: var(--msa-muted-soft);
+        }}
+        .msa-level-profit:before {{background: var(--msa-up);}}
+        .msa-level-danger:before {{background: var(--msa-down);}}
+        .msa-level-neutral:before {{background: var(--msa-blue);}}
+        .msa-level-label {{
+            color: var(--msa-muted-soft);
+            font-size: .78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }}
+        .msa-level-value {{
+            color: var(--msa-text);
+            font-size: clamp(1.8rem, 3vw, 2.45rem);
+            font-weight: 820;
+            line-height: 1.04;
+            margin-top: 8px;
+            letter-spacing: 0;
+        }}
+        .msa-level-profit .msa-level-value {{color: var(--msa-up);}}
+        .msa-level-danger .msa-level-value {{color: var(--msa-down);}}
+        .msa-level-detail {{
+            color: var(--msa-muted);
+            margin-top: 8px;
+            font-size: .86rem;
+            line-height: 1.25;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -2343,12 +2391,33 @@ def render_premium_trade_ticket(analysis: dict[str, Any]) -> None:
     status = live_status(analysis)
     with st.container(border=True):
         st.markdown("**Trade ticket preview**")
-        cols = st.columns(5)
-        cols[0].metric("Current", money(price), status, border=True)
-        cols[1].metric("Entry", money(entry), pct(distance) if distance is not None else "wait", border=True)
-        cols[2].metric("Stop loss", money(stop), f"Risk {money(risk)}" if risk else "n/a", border=True)
-        cols[3].metric("Take profit", money(target), f"Reward {money(reward)}" if reward else "n/a", border=True)
-        cols[4].metric("R:R", f"{risk_reward:.2f}R" if risk_reward is not None else "n/a", "Target 1", border=True)
+        items = [
+            ("Current", money(price), status, "neutral"),
+            ("Entry trigger", money(entry), "Buy only after confirmation", "profit"),
+            ("Stop loss", money(stop), f"Risk per share {money(risk)}" if risk else "Risk defined here", "danger"),
+            ("Take profit 1", money(target), f"Reward {money(reward)}" if reward else "First trim target", "profit"),
+            ("Take profit 2", money(levels["target_2"]), "Runner target", "profit"),
+        ]
+        card_parts = ['<div class="msa-level-board">']
+        for label, value, detail, tone in items:
+            card_parts.append(
+                '<div class="msa-level-card msa-level-{tone}">'
+                '<div class="msa-level-label">{label}</div>'
+                '<div class="msa-level-value">{value}</div>'
+                '<div class="msa-level-detail">{detail}</div>'
+                '</div>'.format(
+                    tone=html.escape(tone),
+                    label=html.escape(label),
+                    value=html.escape(value),
+                    detail=html.escape(str(detail)),
+                )
+            )
+        card_parts.append("</div>")
+        st.markdown("".join(card_parts), unsafe_allow_html=True)
+        cols = st.columns(3)
+        cols[0].metric("Distance to entry", pct(distance) if distance is not None else "wait", border=True)
+        cols[1].metric("Target 1 R:R", f"{risk_reward:.2f}R" if risk_reward is not None else "n/a", border=True)
+        cols[2].metric("Playbook fit", str(analysis.get("Playbook fit", "n/a")), border=True)
         st.caption("Paper-trade preview only. Confirm news, spread, volume, and broker rules before any real order.")
 
 
@@ -2383,8 +2452,8 @@ def lightweight_chart_payload(
     candles: list[dict[str, float | int]] = []
     volume: list[dict[str, float | int | str]] = []
     palette = theme_palette()
-    up = "#26A69A"
-    down = "#EF5350"
+    up = "#00C805"
+    down = "#FF375F"
 
     for _, row in clean_df.iterrows():
         candle_time = chart_timestamp_seconds(row["Time"])
@@ -2417,17 +2486,17 @@ def lightweight_chart_payload(
                     "title": label,
                     "price": round(float(value), 4),
                     "color": color,
-                "style": style,
+                    "style": style,
                 }
             )
 
     add_price_line("Current", safe_float(current_price), palette["text"], "solid")
-    add_price_line("Buy low", levels["buy_low"], palette["cyan"])
-    add_price_line("Buy high", levels["buy_high"], palette["cyan"])
+    add_price_line("Buy low", levels["buy_low"], "#6B7280")
+    add_price_line("Buy high", levels["buy_high"], "#6B7280")
     add_price_line("Entry", levels["entry"], up)
     add_price_line("Stop", levels["stop"], down)
     add_price_line("TP1", levels["target_1"], up)
-    add_price_line("TP2", levels["target_2"], palette["blue"])
+    add_price_line("TP2", levels["target_2"], "#86EFAC")
 
     markers: list[dict[str, Any]] = []
     if candles:
@@ -2602,11 +2671,11 @@ def render_lightweight_trading_chart(
   ro.observe(container);
 
   const candleSeries = chart.addCandlestickSeries({
-    upColor: "#26A69A",
-    downColor: "#EF5350",
+    upColor: "#00C805",
+    downColor: "#FF375F",
     borderVisible: false,
-    wickUpColor: "#26A69A",
-    wickDownColor: "#EF5350",
+    wickUpColor: "#00C805",
+    wickDownColor: "#FF375F",
     priceFormat: { type: "price", precision: 2, minMove: 0.01 },
     lastValueVisible: true,
     priceLineVisible: true,
@@ -2867,7 +2936,7 @@ def render_lightweight_trading_chart(
     for key, value in replacements.items():
         component_html = component_html.replace(key, str(value))
 
-    components.html(component_html, height=chart_height + 6, scrolling=False)
+    components.html(component_html, height=chart_height + 6, width=1280, scrolling=False)
     return True
 
 
@@ -3379,15 +3448,15 @@ def render_chart_panel(
             icon=":material/wifi_off:",
         )
 
-    render_ai_decision_panel(analysis)
-    render_ai_chart_trade_map(analysis)
-    render_premium_trade_ticket(analysis)
-    render_plan_card(analysis)
     render_candlestick_chart(history, analysis, max_candles=max_candles)
     st.caption(
         f"Chart source: {source}. Last screen refresh: {datetime.now().strftime('%I:%M:%S %p')}. "
         "Free Yahoo data can be real-time or delayed depending on exchange and availability."
     )
+    render_premium_trade_ticket(analysis)
+    render_ai_decision_panel(analysis)
+    render_ai_chart_trade_map(analysis)
+    render_plan_card(analysis)
     with st.expander(f":material/article: Latest {ticker.upper()} news", expanded=True):
         render_news_items(finnhub_company_news(ticker, days=5, limit=5))
 
@@ -3623,6 +3692,13 @@ def page_dashboard() -> None:
             st.write("- Open Charts for 1-minute candles and AI buy/sell levels.")
             st.write("- Read the news before approving any paper plan.")
             st.write("- Use Journal even when the best decision is no trade.")
+        with st.container(border=True):
+            st.markdown("**New trader path**")
+            st.write("1. Learn: read Start here and Glossary.")
+            st.write("2. Dashboard: find the main watch.")
+            st.write("3. Charts: check candles, entry, stop, profit.")
+            st.write("4. Trade Desk: approve paper trades only.")
+            st.write("5. Journal: save what happened.")
 
     st.subheader("Scanner candidates")
     show_scan_table(df, key="dashboard_scan_table")
@@ -4105,6 +4181,8 @@ def page_learn() -> None:
             "Chart reading",
             "Risk",
             "News",
+            "Flashcards",
+            "Quiz",
             "Practice",
             "Glossary",
             "iPad",
@@ -4150,6 +4228,42 @@ def page_learn() -> None:
             st.write("4. Read the AI decision. If it says Study only or Watch only, do not force a trade.")
             st.write("5. Open Trade Desk, set your max paper risk, review the staged order, and only approve if every checklist item makes sense.")
             st.write("6. Open Journal and record what happened, even if you skipped the trade.")
+
+        with st.container(border=True):
+            st.markdown("**What the app levels mean**")
+            level_guide = pd.DataFrame(
+                [
+                    {"Level": "Current", "Plain English": "Where the stock is trading now.", "Beginner rule": "Do not buy just because this number is moving."},
+                    {"Level": "Entry trigger", "Plain English": "The price that confirms buyers are showing strength.", "Beginner rule": "Paper buy only after confirmation, not before."},
+                    {"Level": "Stop loss", "Plain English": "The price where the idea is wrong.", "Beginner rule": "If you cannot accept this planned loss, the trade is too big."},
+                    {"Level": "Take profit 1", "Plain English": "The first planned sell/trim area.", "Beginner rule": "This is where reward starts paying for the risk."},
+                    {"Level": "Runner target", "Plain English": "A second target if the move keeps working.", "Beginner rule": "Do not hold a runner without a written exit plan."},
+                ]
+            )
+            st.dataframe(level_guide, width="stretch", hide_index=True)
+
+        with st.container(border=True):
+            st.markdown("**Beginner roadmap**")
+            st.write("1. Learn the words: use Glossary until the order ticket terms make sense.")
+            st.write("2. Learn the levels: current price, entry trigger, stop loss, take profit 1, runner target.")
+            st.write("3. Learn the scanner: price, gap, float, RVOL, volume, catalyst.")
+            st.write("4. Learn the chart: candles, VWAP, EMAs, support, resistance, breakout, pullback.")
+            st.write("5. Paper trade only: approve practice orders and journal every result.")
+            st.write("6. Review mistakes: missed entry, chase, bad stop, bad news read, oversized risk.")
+            st.write("7. Repeat until you can explain every trade idea without guessing.")
+
+        with st.container(border=True):
+            st.markdown("**Study tools inside Learn**")
+            tool_cols = st.columns(3)
+            with tool_cols[0]:
+                st.markdown("**Flashcards**")
+                st.write("Practice the words until entry, stop loss, take profit, RVOL, VWAP, and spread feel natural.")
+            with tool_cols[1]:
+                st.markdown("**Quiz**")
+                st.write("Grade yourself on the most common beginner mistakes before approving a paper trade.")
+            with tool_cols[2]:
+                st.markdown("**Practice drill**")
+                st.write("Pick a real stock, read the AI plan, and complete the checklist without risking money.")
 
         with st.container(border=True):
             st.markdown("**Beginner safety rules**")
@@ -4378,6 +4492,117 @@ def page_learn() -> None:
         with st.container(border=True):
             st.markdown("**Live market news**")
             render_news_items(finnhub_market_news("general", limit=6), "Add your Finnhub key or try again later for live news.")
+
+    elif track == "Flashcards":
+        cards = [
+            ("Entry trigger", "The price that confirms buyers are stepping in. You wait for this instead of guessing early."),
+            ("Stop loss", "The level where the setup is wrong. It defines the planned loss before entry."),
+            ("Take profit 1", "The first planned area to sell or trim because reward is starting to pay for the risk."),
+            ("Runner target", "A second target for any remaining shares if the move keeps working."),
+            ("RVOL", "Relative volume. It compares today's volume with normal volume and shows whether attention is unusual."),
+            ("Float", "Shares available for public trading. Lower float can move faster, but it can also be more dangerous."),
+            ("VWAP", "Volume-weighted average price. Many intraday traders use it as a control line."),
+            ("Spread", "The gap between bid and ask. Wide spreads make entries and exits harder."),
+            ("Limit order", "An order that sets the worst price you are willing to accept. It may not fill."),
+            ("Market order", "An order that tries to fill immediately. It can slip badly in fast stocks."),
+            ("Offering", "A company sells more shares. This can pressure price because supply increases."),
+            ("Halt", "A temporary pause in trading. A halted stock can reopen far above or below the last price."),
+        ]
+        st.session_state.learn_flash_index = int(st.session_state.get("learn_flash_index", 0)) % len(cards)
+        index = st.session_state.learn_flash_index
+        term, answer = cards[index]
+        with st.container(border=True):
+            st.markdown("**Flashcard deck**")
+            st.progress((index + 1) / len(cards))
+            st.caption(f"Card {index + 1} of {len(cards)}")
+            st.markdown(f"### {term}")
+            if st.toggle("Show answer", key=f"flash_show_{index}"):
+                st.write(answer)
+            cols = st.columns([1, 1, 2])
+            if cols[0].button("Previous", icon=":material/chevron_left:"):
+                st.session_state.learn_flash_index = (index - 1) % len(cards)
+                st.rerun()
+            if cols[1].button("Next", icon=":material/chevron_right:", type="primary"):
+                st.session_state.learn_flash_index = (index + 1) % len(cards)
+                st.rerun()
+            if cols[2].button("Restart deck", icon=":material/restart_alt:"):
+                st.session_state.learn_flash_index = 0
+                st.rerun()
+
+        with st.container(border=True):
+            st.markdown("**How to study these**")
+            st.write("- Say the answer out loud before revealing it.")
+            st.write("- Use Charts after every few cards and point to the same concept on the live chart.")
+            st.write("- If a word still feels fuzzy, open Glossary and read the longer explanation.")
+
+    elif track == "Quiz":
+        questions = [
+            {
+                "question": "What should happen before a beginner paper-buys a momentum setup?",
+                "options": ["Price confirms the entry trigger", "Price is moving fast", "Someone online likes it"],
+                "answer": "Price confirms the entry trigger",
+                "why": "The trigger is confirmation. Moving fast alone can lead to chasing.",
+            },
+            {
+                "question": "What does the stop loss define?",
+                "options": ["Where the idea is wrong", "Where to add more shares", "Where news is best"],
+                "answer": "Where the idea is wrong",
+                "why": "The stop is the invalidation point and planned risk line.",
+            },
+            {
+                "question": "Why does RVOL matter?",
+                "options": ["It shows unusual trading attention", "It guarantees profit", "It replaces the need for news"],
+                "answer": "It shows unusual trading attention",
+                "why": "High RVOL means today is more active than normal, but it never guarantees a win.",
+            },
+            {
+                "question": "Which order gives price control but may not fill?",
+                "options": ["Limit order", "Market order", "Random order"],
+                "answer": "Limit order",
+                "why": "A limit order controls worst acceptable price, but price may move away.",
+            },
+            {
+                "question": "What should you do if a stock is far above the planned entry?",
+                "options": ["Avoid chasing and wait for a new setup", "Buy because it is strong", "Remove the stop loss"],
+                "answer": "Avoid chasing and wait for a new setup",
+                "why": "Chasing ruins risk/reward and makes the stop harder to respect.",
+            },
+            {
+                "question": "Why are offering and dilution headlines risky?",
+                "options": ["They can add share supply and pressure price", "They always make stocks go up", "They remove all volatility"],
+                "answer": "They can add share supply and pressure price",
+                "why": "New share supply can hurt momentum, especially in small caps.",
+            },
+        ]
+        with st.container(border=True):
+            st.markdown("**Beginner quiz**")
+            st.caption("Answer each question, then grade it. This is for learning, not certification.")
+            answers: list[str] = []
+            for index, question in enumerate(questions):
+                choice = st.radio(
+                    question["question"],
+                    question["options"],
+                    key=f"learn_quiz_{index}",
+                    horizontal=False,
+                )
+                answers.append(str(choice))
+            if st.button("Grade quiz", type="primary", icon=":material/check_circle:"):
+                score = sum(answer == question["answer"] for answer, question in zip(answers, questions))
+                st.session_state.learn_quiz_score = score
+                st.session_state.learn_quiz_graded = True
+
+        if st.session_state.get("learn_quiz_graded"):
+            score = int(st.session_state.get("learn_quiz_score", 0))
+            st.success(f"You scored {score}/{len(questions)}.")
+            for index, question in enumerate(questions):
+                selected = st.session_state.get(f"learn_quiz_{index}")
+                passed = selected == question["answer"]
+                with st.container(border=True):
+                    st.badge("Correct" if passed else "Review", color="green" if passed else "orange")
+                    st.markdown(f"**{question['question']}**")
+                    st.write(f"Your answer: {selected}")
+                    st.write(f"Best answer: {question['answer']}")
+                    st.caption(question["why"])
 
     elif track == "Practice":
         with st.container(border=True):
