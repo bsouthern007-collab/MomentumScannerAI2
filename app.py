@@ -2112,6 +2112,61 @@ def apply_style(mode: str | None = None) -> None:
             font-size: .86rem;
             line-height: 1.25;
         }}
+        .msa-compact-header {{
+            margin: 0 0 10px 0;
+            padding: 0;
+        }}
+        .msa-compact-header h1 {{
+            margin: 0;
+            font-size: clamp(1.7rem, 3vw, 2.35rem);
+            line-height: 1.05;
+            color: var(--msa-text);
+        }}
+        .msa-compact-header p {{
+            margin: 5px 0 0 0;
+            color: var(--msa-muted);
+            font-size: .95rem;
+        }}
+        .msa-compact-header small {{
+            display: block;
+            margin-top: 4px;
+            color: var(--msa-muted-soft);
+            font-size: .78rem;
+            line-height: 1.25;
+        }}
+        .msa-chart-stat-strip {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 10px 0 2px 0;
+        }}
+        .msa-chart-stat-card {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            box-shadow: 0 12px 26px var(--msa-shadow);
+        }}
+        .msa-chart-stat-label {{
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 750;
+            text-transform: uppercase;
+        }}
+        .msa-chart-stat-value {{
+            color: var(--msa-text);
+            font-size: 1.15rem;
+            line-height: 1.1;
+            font-weight: 800;
+            margin-top: 5px;
+        }}
+        .msa-chart-stat-detail {{
+            color: var(--msa-muted);
+            font-size: .8rem;
+            margin-top: 4px;
+        }}
+        .msa-chart-stat-up .msa-chart-stat-value {{color: var(--msa-up);}}
+        .msa-chart-stat-down .msa-chart-stat-value {{color: var(--msa-down);}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -2147,6 +2202,22 @@ def header(title: str, subtitle: str | None = None) -> None:
     st.caption(
         "Educational paper-trading tool. Verify live data, news, float, halts, and risk before making real trades. "
         "This is not financial advice."
+    )
+
+
+def compact_header(title: str, subtitle: str | None = None) -> None:
+    st.markdown(
+        """
+        <div class="msa-compact-header">
+          <h1>{title}</h1>
+          {subtitle}
+          <small>Educational paper-trading tool. Verify live data, news, float, halts, and risk before making real trades. This is not financial advice.</small>
+        </div>
+        """.format(
+            title=html.escape(title),
+            subtitle=f"<p>{html.escape(subtitle)}</p>" if subtitle else "",
+        ),
+        unsafe_allow_html=True,
     )
 
 
@@ -3286,11 +3357,29 @@ def render_candlestick_chart(
     current_price = float(last["Close"])
     latest_vwap = float(last["VWAP"]) if math.isfinite(float(last["VWAP"])) else current_price
 
-    metric_cols = st.columns(4)
-    metric_cols[0].metric("Last candle", money(current_price), pct(candle_delta), border=True)
-    metric_cols[1].metric("Range high", money(range_high), border=True)
-    metric_cols[2].metric("Range low", money(range_low), border=True)
-    metric_cols[3].metric("VWAP", money(latest_vwap), border=True)
+    def render_chart_stats() -> None:
+        stats = [
+            ("Last candle", money(current_price), pct(candle_delta), "up" if candle_delta >= 0 else "down"),
+            ("Range high", money(range_high), f"{len(chart_df):,} candles", "neutral"),
+            ("Range low", money(range_low), "visible range", "neutral"),
+            ("VWAP", money(latest_vwap), "intraday control line", "neutral"),
+        ]
+        parts = ['<div class="msa-chart-stat-strip">']
+        for label, value, detail, tone in stats:
+            parts.append(
+                '<div class="msa-chart-stat-card msa-chart-stat-{tone}">'
+                '<div class="msa-chart-stat-label">{label}</div>'
+                '<div class="msa-chart-stat-value">{value}</div>'
+                '<div class="msa-chart-stat-detail">{detail}</div>'
+                "</div>".format(
+                    tone=html.escape(tone),
+                    label=html.escape(label),
+                    value=html.escape(value),
+                    detail=html.escape(detail),
+                )
+            )
+        parts.append("</div>")
+        st.markdown("".join(parts), unsafe_allow_html=True)
 
     candle_size = 16 if len(chart_df) <= 90 else 12 if len(chart_df) <= 180 else 8 if len(chart_df) <= 390 else 4
     chart_engine = st.session_state.get("chart_engine", "TradingView-style")
@@ -3298,10 +3387,12 @@ def render_candlestick_chart(
     if chart_engine == "TradingView-style":
         rendered = render_lightweight_trading_chart(chart_df, analysis, current_price, height, max_candles)
         if rendered:
+            render_chart_stats()
             return
 
     if go is not None and make_subplots is not None:
         render_plotly_trading_chart(chart_df, analysis, current_price, height)
+        render_chart_stats()
         return
 
     base = alt.Chart(chart_df).encode(
@@ -3416,6 +3507,7 @@ def render_candlestick_chart(
         .properties(height=170)
     )
     st.altair_chart(volume_chart, width="stretch")
+    render_chart_stats()
 
 
 def render_chart_panel(
@@ -3884,34 +3976,25 @@ def page_market_scan() -> None:
 
 
 def page_charts() -> None:
-    header("Charts", "Chart the stock, trend, volume, and paper-trade levels.")
+    compact_header("Charts", "Chart the stock, trend, volume, and paper-trade levels.")
     selected_from_scan = normalize_user_symbol(st.session_state.get("selected_ticker", ""))
     tickers = [row["ticker"] for row in DEMO_PROFILES] + list(INDEX_PROFILES) + read_watchlist()
     if selected_from_scan:
         tickers.append(selected_from_scan)
     ticker_options = sorted(set(tickers))
     selected_index = ticker_options.index(selected_from_scan) if selected_from_scan in ticker_options else 0
-    cols = st.columns([1, 1])
-    selected_ticker = cols[0].selectbox("Stock", ticker_options, index=selected_index)
-    custom_ticker = normalize_user_symbol(cols[1].text_input("Custom stock", value=""))
 
     with st.container(border=True):
-        st.markdown("**Chart controls**")
-        control_top = st.columns([1.6, 1.4, 1.6])
-        interval = control_top[0].segmented_control(
+        control_top = st.columns([1.05, 1.05, 2.0, 0.75], vertical_alignment="bottom")
+        selected_ticker = control_top[0].selectbox("Stock", ticker_options, index=selected_index)
+        custom_ticker = normalize_user_symbol(control_top[1].text_input("Custom stock", value=""))
+        interval = control_top[2].segmented_control(
             "Candle size",
             ["1m", "2m", "5m", "15m", "30m", "60m", "1d"],
             default="1m",
             key="chart_interval",
         )
         interval = str(interval or "1m")
-        chart_engine = control_top[1].segmented_control(
-            "Chart style",
-            ["TradingView-style", "Backup Plotly"],
-            default=st.session_state.get("chart_engine", "TradingView-style"),
-            key="chart_engine",
-        )
-        chart_engine = str(chart_engine or "TradingView-style")
 
         if interval == "1m":
             period_options = ["1d", "5d"]
@@ -3920,7 +4003,7 @@ def page_charts() -> None:
         else:
             period_options = ["1mo", "3mo", "6mo", "1y", "2y"]
 
-        period = control_top[2].segmented_control(
+        period = control_top[3].segmented_control(
             "Chart range",
             period_options,
             default=period_options[0],
@@ -3935,7 +4018,7 @@ def page_charts() -> None:
             "390": 390,
             "All": None,
         }
-        control_bottom = st.columns([1.6, 1, 1, 1, 1, 1])
+        control_bottom = st.columns([2.05, 1.25, 0.68, 0.78, 0.68, 0.68, 0.74], vertical_alignment="bottom")
         default_window = "45" if interval == "1m" else "180"
         window_label = control_bottom[0].segmented_control(
             "Visible candles",
@@ -3943,14 +4026,24 @@ def page_charts() -> None:
             default=default_window,
             key=f"chart_visible_candles_{interval}",
         )
-        live_toggle = control_bottom[1].toggle("Live data", value=True, key="chart_live_enabled")
-        auto_refresh = control_bottom[2].toggle("Auto-refresh", value=True, key="chart_auto_refresh_enabled")
-        control_bottom[3].toggle("EMAs", value=True, key="chart_layer_emas")
-        control_bottom[4].toggle("VWAP", value=True, key="chart_layer_vwap")
-        control_bottom[5].toggle("AI levels", value=True, key="chart_layer_ai_signals")
-
+        default_engine_label = "TradingView" if st.session_state.get("chart_engine", "TradingView-style") == "TradingView-style" else "Backup"
+        engine_label = control_bottom[1].segmented_control(
+            "Chart style",
+            ["TradingView", "Backup"],
+            default=default_engine_label,
+            key="chart_engine_label",
+        )
+        chart_engine = "TradingView-style" if str(engine_label or "TradingView") == "TradingView" else "Backup Plotly"
+        st.session_state.chart_engine = chart_engine
+        live_toggle = control_bottom[2].toggle("Live", value=True, key="chart_live_enabled")
+        auto_refresh = control_bottom[3].toggle("Refresh", value=True, key="chart_auto_refresh_enabled")
+        control_bottom[4].toggle("EMAs", value=True, key="chart_layer_emas")
+        control_bottom[5].toggle("VWAP", value=True, key="chart_layer_vwap")
+        control_bottom[6].toggle("Levels", value=True, key="chart_layer_ai_signals")
+        provisional_prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
         st.caption(
-            "Use the 45/90/180/390 buttons inside the chart for quick zoom. Mouse wheel zooms, drag pans, and double-click resets."
+            f"Wheel zoom, drag pan, double-click reset. Data mode: {'live intraday' if provisional_prefer_live else 'learning'}. "
+            "1-minute candles start tight at 45 candles; use 90/180/390/Fit all inside the chart to inspect more."
         )
 
     st.session_state.chart_layer_ema9 = bool(st.session_state.get("chart_layer_emas", True))
@@ -3962,12 +4055,6 @@ def page_charts() -> None:
     st.session_state.selected_ticker = ticker
     max_candles = candle_windows[window_label]
     prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
-
-    if interval == "1m":
-        st.caption(
-            f"Data mode: {'live intraday' if prefer_live else 'learning'}. "
-            "1-minute candles are easiest to see on the 1d range with Last 90 or Last 180 selected."
-        )
 
     if prefer_live and auto_refresh:
         auto_refresh_chart_panel(ticker, period, interval, prefer_live, max_candles=max_candles)
@@ -4495,94 +4582,125 @@ def page_learn() -> None:
 
     elif track == "Flashcards":
         cards = [
-            ("Entry trigger", "The price that confirms buyers are stepping in. You wait for this instead of guessing early."),
-            ("Stop loss", "The level where the setup is wrong. It defines the planned loss before entry."),
-            ("Take profit 1", "The first planned area to sell or trim because reward is starting to pay for the risk."),
-            ("Runner target", "A second target for any remaining shares if the move keeps working."),
-            ("RVOL", "Relative volume. It compares today's volume with normal volume and shows whether attention is unusual."),
-            ("Float", "Shares available for public trading. Lower float can move faster, but it can also be more dangerous."),
-            ("VWAP", "Volume-weighted average price. Many intraday traders use it as a control line."),
-            ("Spread", "The gap between bid and ask. Wide spreads make entries and exits harder."),
-            ("Limit order", "An order that sets the worst price you are willing to accept. It may not fill."),
-            ("Market order", "An order that tries to fill immediately. It can slip badly in fast stocks."),
-            ("Offering", "A company sells more shares. This can pressure price because supply increases."),
-            ("Halt", "A temporary pause in trading. A halted stock can reopen far above or below the last price."),
+            {"term": "Entry trigger", "category": "Risk", "answer": "The price that confirms buyers are stepping in. You wait for this instead of guessing early.", "example": "If the plan says entry above $5.12, a beginner waits for that confirmation."},
+            {"term": "Stop loss", "category": "Risk", "answer": "The level where the setup is wrong. It defines the planned loss before entry.", "example": "If entry is $5.12 and stop is $4.92, the risk is $0.20 per share."},
+            {"term": "Take profit 1", "category": "Risk", "answer": "The first planned area to sell or trim because reward is starting to pay for the risk.", "example": "A first target near 1.5R to 2R lets you measure reward before entering."},
+            {"term": "Runner target", "category": "Risk", "answer": "A second target for any remaining shares if the move keeps working.", "example": "A runner still needs a written exit instead of hoping."},
+            {"term": "R multiple", "category": "Risk", "answer": "Reward or loss measured against the planned risk.", "example": "If you risk $20 and make $40, that is +2R."},
+            {"term": "RVOL", "category": "Scanner", "answer": "Relative volume. It compares today's volume with normal volume and shows whether attention is unusual.", "example": "A 5x RVOL stock is trading far more activity than normal."},
+            {"term": "Float", "category": "Scanner", "answer": "Shares available for public trading. Lower float can move faster, but it can also be more dangerous.", "example": "A 7M float stock can move sharply when demand spikes."},
+            {"term": "Gapper", "category": "Scanner", "answer": "A stock trading much higher than yesterday's close.", "example": "The app looks for at least a 10% daily move in the small-cap playbook."},
+            {"term": "Liquidity", "category": "Scanner", "answer": "How easy it is to buy or sell without moving the price too much.", "example": "Thin liquidity can make exits ugly even if the chart looked good."},
+            {"term": "VWAP", "category": "Charts", "answer": "Volume-weighted average price. Many intraday traders use it as a control line.", "example": "A stock holding above VWAP is often healthier than one fading below it."},
+            {"term": "EMA 9", "category": "Charts", "answer": "A fast moving average that helps show short-term momentum.", "example": "Strong trends often ride the 9 EMA instead of breaking below it."},
+            {"term": "Support", "category": "Charts", "answer": "A price area where buyers recently defended the stock.", "example": "A pullback holding support can be cleaner than buying straight up."},
+            {"term": "Resistance", "category": "Charts", "answer": "A price area where sellers recently stopped the stock.", "example": "Breakouts need to clear resistance with volume."},
+            {"term": "Spread", "category": "Orders", "answer": "The gap between bid and ask. Wide spreads make entries and exits harder.", "example": "A $5.00 bid and $5.18 ask is expensive for a beginner setup."},
+            {"term": "Limit order", "category": "Orders", "answer": "An order that sets the worst price you are willing to accept. It may not fill.", "example": "A buy limit at $5.10 will not intentionally pay above $5.10."},
+            {"term": "Market order", "category": "Orders", "answer": "An order that tries to fill immediately. It can slip badly in fast stocks.", "example": "A market order in a fast small cap may fill far away from the price you saw."},
+            {"term": "Stop order", "category": "Orders", "answer": "An order that activates after a stop price is reached.", "example": "Some stop orders become market orders after triggering."},
+            {"term": "Time in force", "category": "Orders", "answer": "How long an order stays active.", "example": "A day order expires after the session; a GTC order can stay open longer."},
+            {"term": "Offering", "category": "News", "answer": "A company sells more shares. This can pressure price because supply increases.", "example": "An offering headline can quickly break a momentum move."},
+            {"term": "Dilution", "category": "News", "answer": "Existing shares represent a smaller slice after new shares are issued.", "example": "Small caps can reverse fast when dilution risk appears."},
+            {"term": "Halt", "category": "News", "answer": "A temporary pause in trading. A halted stock can reopen far above or below the last price.", "example": "New traders should be careful around halt risk."},
+            {"term": "Catalyst", "category": "News", "answer": "The reason traders are paying attention today.", "example": "Earnings, FDA news, contracts, and upgrades can all be catalysts."},
         ]
-        st.session_state.learn_flash_index = int(st.session_state.get("learn_flash_index", 0)) % len(cards)
+        deck_options = ["All", "Orders", "Risk", "Charts", "Scanner", "News"]
+        deck = st.segmented_control("Deck", deck_options, default="All", key="learn_flash_deck")
+        deck = str(deck or "All")
+        filtered_cards = [card for card in cards if deck == "All" or card["category"] == deck]
+        st.session_state.learn_flash_index = int(st.session_state.get("learn_flash_index", 0)) % len(filtered_cards)
         index = st.session_state.learn_flash_index
-        term, answer = cards[index]
+        card = filtered_cards[index]
+        term = str(card["term"])
+        known_terms = set(st.session_state.get("learn_flash_known", []))
+        review_terms = set(st.session_state.get("learn_flash_review", []))
+
+        stat_cols = st.columns(4)
+        stat_cols[0].metric("Deck", deck, border=True)
+        stat_cols[1].metric("Cards", str(len(filtered_cards)), border=True)
+        stat_cols[2].metric("Known", str(len(known_terms)), border=True)
+        stat_cols[3].metric("Review", str(len(review_terms)), border=True)
+
         with st.container(border=True):
             st.markdown("**Flashcard deck**")
-            st.progress((index + 1) / len(cards))
-            st.caption(f"Card {index + 1} of {len(cards)}")
+            st.progress((index + 1) / len(filtered_cards))
+            st.caption(f"Card {index + 1} of {len(filtered_cards)} | {card['category']}")
             st.markdown(f"### {term}")
-            if st.toggle("Show answer", key=f"flash_show_{index}"):
-                st.write(answer)
-            cols = st.columns([1, 1, 2])
+            safe_deck = deck.lower().replace(" ", "_")
+            if st.toggle("Show answer", key=f"flash_show_{safe_deck}_{index}"):
+                st.write(card["answer"])
+                st.caption(f"Example: {card['example']}")
+            cols = st.columns([1, 1, 1, 1, 1.2])
             if cols[0].button("Previous", icon=":material/chevron_left:"):
-                st.session_state.learn_flash_index = (index - 1) % len(cards)
+                st.session_state.learn_flash_index = (index - 1) % len(filtered_cards)
                 st.rerun()
             if cols[1].button("Next", icon=":material/chevron_right:", type="primary"):
-                st.session_state.learn_flash_index = (index + 1) % len(cards)
+                st.session_state.learn_flash_index = (index + 1) % len(filtered_cards)
                 st.rerun()
-            if cols[2].button("Restart deck", icon=":material/restart_alt:"):
+            if cols[2].button("I knew it", icon=":material/check_circle:"):
+                known_terms.add(term)
+                review_terms.discard(term)
+                st.session_state.learn_flash_known = sorted(known_terms)
+                st.session_state.learn_flash_review = sorted(review_terms)
+                st.session_state.learn_flash_index = (index + 1) % len(filtered_cards)
+                st.rerun()
+            if cols[3].button("Review", icon=":material/replay:"):
+                review_terms.add(term)
+                known_terms.discard(term)
+                st.session_state.learn_flash_known = sorted(known_terms)
+                st.session_state.learn_flash_review = sorted(review_terms)
+                st.session_state.learn_flash_index = (index + 1) % len(filtered_cards)
+                st.rerun()
+            if cols[4].button("Reset", icon=":material/restart_alt:"):
                 st.session_state.learn_flash_index = 0
+                st.session_state.learn_flash_known = []
+                st.session_state.learn_flash_review = []
                 st.rerun()
 
         with st.container(border=True):
             st.markdown("**How to study these**")
             st.write("- Say the answer out loud before revealing it.")
             st.write("- Use Charts after every few cards and point to the same concept on the live chart.")
-            st.write("- If a word still feels fuzzy, open Glossary and read the longer explanation.")
+            st.write("- Mark fuzzy words for Review, then come back after reading Glossary.")
 
     elif track == "Quiz":
-        questions = [
-            {
-                "question": "What should happen before a beginner paper-buys a momentum setup?",
-                "options": ["Price confirms the entry trigger", "Price is moving fast", "Someone online likes it"],
-                "answer": "Price confirms the entry trigger",
-                "why": "The trigger is confirmation. Moving fast alone can lead to chasing.",
-            },
-            {
-                "question": "What does the stop loss define?",
-                "options": ["Where the idea is wrong", "Where to add more shares", "Where news is best"],
-                "answer": "Where the idea is wrong",
-                "why": "The stop is the invalidation point and planned risk line.",
-            },
-            {
-                "question": "Why does RVOL matter?",
-                "options": ["It shows unusual trading attention", "It guarantees profit", "It replaces the need for news"],
-                "answer": "It shows unusual trading attention",
-                "why": "High RVOL means today is more active than normal, but it never guarantees a win.",
-            },
-            {
-                "question": "Which order gives price control but may not fill?",
-                "options": ["Limit order", "Market order", "Random order"],
-                "answer": "Limit order",
-                "why": "A limit order controls worst acceptable price, but price may move away.",
-            },
-            {
-                "question": "What should you do if a stock is far above the planned entry?",
-                "options": ["Avoid chasing and wait for a new setup", "Buy because it is strong", "Remove the stop loss"],
-                "answer": "Avoid chasing and wait for a new setup",
-                "why": "Chasing ruins risk/reward and makes the stop harder to respect.",
-            },
-            {
-                "question": "Why are offering and dilution headlines risky?",
-                "options": ["They can add share supply and pressure price", "They always make stocks go up", "They remove all volatility"],
-                "answer": "They can add share supply and pressure price",
-                "why": "New share supply can hurt momentum, especially in small caps.",
-            },
-        ]
+        quiz_bank = {
+            "Beginner basics": [
+                {"question": "What should happen before a beginner paper-buys a momentum setup?", "options": ["Price confirms the entry trigger", "Price is moving fast", "Someone online likes it"], "answer": "Price confirms the entry trigger", "why": "The trigger is confirmation. Moving fast alone can lead to chasing."},
+                {"question": "What does the stop loss define?", "options": ["Where the idea is wrong", "Where to add more shares", "Where news is best"], "answer": "Where the idea is wrong", "why": "The stop is the invalidation point and planned risk line."},
+                {"question": "Why does RVOL matter?", "options": ["It shows unusual trading attention", "It guarantees profit", "It replaces the need for news"], "answer": "It shows unusual trading attention", "why": "High RVOL means today is more active than normal, but it never guarantees a win."},
+                {"question": "What should you do if a stock is far above the planned entry?", "options": ["Avoid chasing and wait for a new setup", "Buy because it is strong", "Remove the stop loss"], "answer": "Avoid chasing and wait for a new setup", "why": "Chasing ruins risk/reward and makes the stop harder to respect."},
+                {"question": "What belongs in a complete paper-trade plan?", "options": ["Entry, stop, target, size, and reason", "Only the stock symbol", "Only the biggest news headline"], "answer": "Entry, stop, target, size, and reason", "why": "A plan needs a reason and defined risk before the order is staged."},
+            ],
+            "Order ticket": [
+                {"question": "Which order gives price control but may not fill?", "options": ["Limit order", "Market order", "Stop order"], "answer": "Limit order", "why": "A limit order controls worst acceptable price, but price may move away."},
+                {"question": "What does quantity mean on a broker ticket?", "options": ["How many shares", "The stock's float", "The daily gain"], "answer": "How many shares", "why": "Quantity is share count. The app estimates paper shares from max risk and stop distance."},
+                {"question": "Why can a market order be dangerous in a fast small-cap stock?", "options": ["It can fill at a worse price than expected", "It always waits for your exact price", "It removes all risk"], "answer": "It can fill at a worse price than expected", "why": "Fast candles and wide spreads can create slippage."},
+                {"question": "What does time in force control?", "options": ["How long the order stays active", "The company's float", "The chart candle color"], "answer": "How long the order stays active", "why": "A forgotten open order can create surprises if you do not understand duration."},
+                {"question": "What should happen before any real broker order is sent?", "options": ["Review the confirmation screen and broker rules", "Ignore the spread", "Skip the stop plan"], "answer": "Review the confirmation screen and broker rules", "why": "The app is a paper-trade planner. Real orders require careful broker review."},
+            ],
+            "Charts and risk": [
+                {"question": "What does VWAP help you judge?", "options": ["Intraday control and price location", "The company's exact cash balance", "Whether profit is guaranteed"], "answer": "Intraday control and price location", "why": "VWAP is a useful intraday reference, but it is only one piece of context."},
+                {"question": "What is usually healthier after a big push?", "options": ["A controlled pullback holding support", "A huge chase far above the trigger", "Removing the stop"], "answer": "A controlled pullback holding support", "why": "Better entries often come from controlled pullbacks or clean breakouts, not chasing."},
+                {"question": "Why should target 1 be checked before entry?", "options": ["To confirm reward is worth the risk", "To avoid reading news", "To make the candle bigger"], "answer": "To confirm reward is worth the risk", "why": "If reward is too small compared with risk, the setup is not worth forcing."},
+                {"question": "Why are offering and dilution headlines risky?", "options": ["They can add share supply and pressure price", "They always make stocks go up", "They remove all volatility"], "answer": "They can add share supply and pressure price", "why": "New share supply can hurt momentum, especially in small caps."},
+                {"question": "What should you journal after a skipped setup?", "options": ["Why it was skipped and what happened next", "Nothing because no trade happened", "Only the highest price"], "answer": "Why it was skipped and what happened next", "why": "Skipped trades teach discipline and help you learn which filters worked."},
+            ],
+        }
+        quiz_set = st.segmented_control("Quiz set", list(quiz_bank), default="Beginner basics", key="learn_quiz_set")
+        quiz_set = str(quiz_set or "Beginner basics")
+        questions = quiz_bank[quiz_set]
+        quiz_slug = quiz_set.lower().replace(" ", "_").replace("/", "_")
         with st.container(border=True):
-            st.markdown("**Beginner quiz**")
+            st.markdown(f"**{quiz_set} quiz**")
             st.caption("Answer each question, then grade it. This is for learning, not certification.")
             answers: list[str] = []
             for index, question in enumerate(questions):
                 choice = st.radio(
                     question["question"],
                     question["options"],
-                    key=f"learn_quiz_{index}",
+                    key=f"learn_quiz_{quiz_slug}_{index}",
                     horizontal=False,
                 )
                 answers.append(str(choice))
@@ -4590,12 +4708,17 @@ def page_learn() -> None:
                 score = sum(answer == question["answer"] for answer, question in zip(answers, questions))
                 st.session_state.learn_quiz_score = score
                 st.session_state.learn_quiz_graded = True
+                st.session_state.learn_quiz_graded_set = quiz_set
+            if st.button("Reset answers", icon=":material/restart_alt:"):
+                st.session_state.learn_quiz_graded = False
+                st.session_state.learn_quiz_score = 0
+                st.rerun()
 
-        if st.session_state.get("learn_quiz_graded"):
+        if st.session_state.get("learn_quiz_graded") and st.session_state.get("learn_quiz_graded_set") == quiz_set:
             score = int(st.session_state.get("learn_quiz_score", 0))
             st.success(f"You scored {score}/{len(questions)}.")
             for index, question in enumerate(questions):
-                selected = st.session_state.get(f"learn_quiz_{index}")
+                selected = st.session_state.get(f"learn_quiz_{quiz_slug}_{index}")
                 passed = selected == question["answer"]
                 with st.container(border=True):
                     st.badge("Correct" if passed else "Review", color="green" if passed else "orange")
