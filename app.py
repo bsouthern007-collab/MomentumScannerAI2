@@ -2167,6 +2167,73 @@ def apply_style(mode: str | None = None) -> None:
         }}
         .msa-chart-stat-up .msa-chart-stat-value {{color: var(--msa-up);}}
         .msa-chart-stat-down .msa-chart-stat-value {{color: var(--msa-down);}}
+        .msa-readiness-command {{
+            display: grid;
+            grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.4fr) minmax(160px, .8fr);
+            gap: 12px;
+            align-items: stretch;
+            margin: 8px 0 12px 0;
+        }}
+        .msa-readiness-tile {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            padding: 13px 14px;
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            box-shadow: 0 14px 28px var(--msa-shadow);
+        }}
+        .msa-readiness-kicker {{
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 760;
+            text-transform: uppercase;
+        }}
+        .msa-readiness-primary {{
+            color: var(--msa-text);
+            font-size: 1.45rem;
+            font-weight: 840;
+            line-height: 1.05;
+            margin-top: 5px;
+        }}
+        .msa-readiness-detail {{
+            color: var(--msa-muted);
+            font-size: .84rem;
+            line-height: 1.28;
+            margin-top: 7px;
+        }}
+        .msa-readiness-ready {{border-left: 4px solid var(--msa-up);}}
+        .msa-readiness-watch {{border-left: 4px solid var(--msa-orange);}}
+        .msa-readiness-hold {{border-left: 4px solid var(--msa-muted-soft);}}
+        .msa-readiness-danger {{border-left: 4px solid var(--msa-down);}}
+        .msa-check-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+            gap: 9px;
+        }}
+        .msa-check-card {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            padding: 10px 11px;
+            background: var(--msa-panel);
+        }}
+        .msa-check-label {{
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 760;
+            text-transform: uppercase;
+        }}
+        .msa-check-value {{
+            color: var(--msa-text);
+            font-size: 1rem;
+            font-weight: 760;
+            margin-top: 4px;
+        }}
+        .msa-check-ok {{border-left: 4px solid var(--msa-up);}}
+        .msa-check-wait {{border-left: 4px solid var(--msa-orange);}}
+        @media (max-width: 900px) {{
+            .msa-readiness-command {{
+                grid-template-columns: 1fr;
+            }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -2408,6 +2475,92 @@ def render_ai_decision_panel(analysis: dict[str, Any]) -> None:
             for item in wait_coaching(analysis, label):
                 st.write(f"- {item}")
         st.caption("This is a paper-trading decision aid. It does not execute orders and it is not financial advice.")
+
+
+def render_trade_readiness_panel(analysis: dict[str, Any]) -> None:
+    label, message = ai_action_summary(analysis)
+    status = live_status(analysis)
+    checks = setup_check_items(analysis)
+    passed, total = setup_completion(analysis)
+    levels = chart_trade_levels(analysis)
+    risk_reward = safe_float(analysis.get("Risk/reward"))
+    price = safe_float(analysis.get("Price"))
+    entry = levels["entry"]
+    distance = ((entry - price) / price * 100) if entry is not None and price else None
+
+    tone = "hold"
+    action = "Wait"
+    if label == "Plan invalid" or status == "Below stop":
+        tone = "danger"
+        action = "Stand down"
+    elif label == "Trigger active" or status in {"Breakout trigger", "In buy zone"}:
+        tone = "ready"
+        action = "Review approval"
+    elif status in {"Near buy zone", "Momentum active"}:
+        tone = "watch"
+        action = "Watch closely"
+
+    next_step = wait_coaching(analysis, label)[0] if label in {"Study only", "Watch only", "Plan invalid"} else "Confirm news, spread, volume, and risk before approving any paper order."
+    command = [
+        '<div class="msa-readiness-command">',
+        '<div class="msa-readiness-tile msa-readiness-{tone}"><div class="msa-readiness-kicker">Paper action</div><div class="msa-readiness-primary">{action}</div><div class="msa-readiness-detail">{status}</div></div>'.format(
+            tone=html.escape(tone),
+            action=html.escape(action),
+            status=html.escape(status),
+        ),
+        '<div class="msa-readiness-tile"><div class="msa-readiness-kicker">AI read</div><div class="msa-readiness-primary">{label}</div><div class="msa-readiness-detail">{message}</div></div>'.format(
+            label=html.escape(label),
+            message=html.escape(message),
+        ),
+        '<div class="msa-readiness-tile"><div class="msa-readiness-kicker">Readiness</div><div class="msa-readiness-primary">{passed}/{total}</div><div class="msa-readiness-detail">{next_step}</div></div>'.format(
+            passed=passed,
+            total=total,
+            next_step=html.escape(next_step),
+        ),
+        "</div>",
+    ]
+
+    check_parts = ['<div class="msa-check-grid">']
+    for name, ok, detail in checks:
+        check_parts.append(
+            '<div class="msa-check-card msa-check-{tone}"><div class="msa-check-label">{name}</div><div class="msa-check-value">{detail}</div></div>'.format(
+                tone="ok" if ok else "wait",
+                name=html.escape(name),
+                detail=html.escape(str(detail)),
+            )
+        )
+    check_parts.extend(
+        [
+            '<div class="msa-check-card"><div class="msa-check-label">To entry</div><div class="msa-check-value">{distance}</div></div>'.format(
+                distance=html.escape(pct(distance) if distance is not None else "n/a")
+            ),
+            '<div class="msa-check-card"><div class="msa-check-label">R/R</div><div class="msa-check-value">{risk_reward}</div></div>'.format(
+                risk_reward=html.escape(f"{risk_reward:.2f}R" if risk_reward is not None else "n/a")
+            ),
+            "</div>",
+        ]
+    )
+
+    with st.container(border=True):
+        st.markdown("**Trade readiness**")
+        st.markdown("".join(command), unsafe_allow_html=True)
+        st.markdown("".join(check_parts), unsafe_allow_html=True)
+
+
+def render_training_progress_panel() -> None:
+    known = len(st.session_state.get("learn_flash_known", []))
+    review = len(st.session_state.get("learn_flash_review", []))
+    quiz_score = st.session_state.get("learn_quiz_score") if st.session_state.get("learn_quiz_graded") else None
+    quiz_set = st.session_state.get("learn_quiz_graded_set", "Not graded") if quiz_score is not None else "Not graded"
+    with st.container(border=True):
+        st.markdown("**Skill builder**")
+        cols = st.columns(3)
+        cols[0].metric("Known cards", str(known), border=True)
+        cols[1].metric("Review pile", str(review), border=True)
+        cols[2].metric("Last quiz", f"{quiz_score}/5" if quiz_score is not None else "n/a", str(quiz_set), border=True)
+        st.write("- Use Flashcards for terms before the open.")
+        st.write("- Use Quiz before approving paper trades.")
+        st.write("- Mark weak topics for review, then check the same idea on Charts.")
 
 
 def chart_trade_levels(analysis: dict[str, Any]) -> dict[str, float | None]:
@@ -3545,6 +3698,7 @@ def render_chart_panel(
         f"Chart source: {source}. Last screen refresh: {datetime.now().strftime('%I:%M:%S %p')}. "
         "Free Yahoo data can be real-time or delayed depending on exchange and availability."
     )
+    render_trade_readiness_panel(analysis)
     render_premium_trade_ticket(analysis)
     render_ai_decision_panel(analysis)
     render_ai_chart_trade_map(analysis)
@@ -3774,6 +3928,7 @@ def page_dashboard() -> None:
     with main_col:
         st.subheader("Primary watch")
         render_ai_decision_panel(best)
+        render_trade_readiness_panel(best)
         render_plan_card(best)
     with right_col:
         with st.container(border=True):
@@ -3791,6 +3946,7 @@ def page_dashboard() -> None:
             st.write("3. Charts: check candles, entry, stop, profit.")
             st.write("4. Trade Desk: approve paper trades only.")
             st.write("5. Journal: save what happened.")
+        render_training_progress_panel()
 
     st.subheader("Scanner candidates")
     show_scan_table(df, key="dashboard_scan_table")
@@ -4018,7 +4174,7 @@ def page_charts() -> None:
             "390": 390,
             "All": None,
         }
-        control_bottom = st.columns([2.05, 1.25, 0.68, 0.78, 0.68, 0.68, 0.74], vertical_alignment="bottom")
+        control_bottom = st.columns([1.75, 1.85, 0.62, 0.72, 0.62, 0.62, 0.68], vertical_alignment="bottom")
         default_window = "45" if interval == "1m" else "180"
         window_label = control_bottom[0].segmented_control(
             "Visible candles",
@@ -4351,6 +4507,8 @@ def page_learn() -> None:
             with tool_cols[2]:
                 st.markdown("**Practice drill**")
                 st.write("Pick a real stock, read the AI plan, and complete the checklist without risking money.")
+
+        render_training_progress_panel()
 
         with st.container(border=True):
             st.markdown("**Beginner safety rules**")
