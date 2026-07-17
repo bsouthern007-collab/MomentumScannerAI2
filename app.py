@@ -301,6 +301,144 @@ def compact_number(value: float | int | None) -> str:
     return f"{value:.0f}"
 
 
+def markdown_text(value: Any) -> str:
+    return str(value).replace("$", "\\$")
+
+
+def playbook_fit_label(stats: dict[str, Any], score: float | int | None = None) -> str:
+    price = safe_float(stats.get("Price"), 0) or 0
+    gain = safe_float(stats.get("Daily gain %"), 0) or 0
+    float_m = safe_float(stats.get("Float M"), 999) or 999
+    rvol = safe_float(stats.get("RVOL"), 0) or 0
+    score_value = safe_float(score, safe_float(stats.get("AI score"), 0)) or 0
+
+    price_ok = DEFAULT_RULES["min_price"] <= price <= DEFAULT_RULES["max_price"]
+    gain_ok = gain >= DEFAULT_RULES["min_gain_pct"]
+    float_ok = float_m <= DEFAULT_RULES["max_float_m"]
+    rvol_ok = rvol >= DEFAULT_RULES["min_rvol"]
+    fit_count = sum([price_ok, gain_ok, float_ok, rvol_ok])
+
+    if fit_count == 4 and score_value >= 74:
+        return "Playbook fit"
+    if price_ok and rvol_ok and fit_count >= 3:
+        return "Developing setup"
+    if not price_ok or not float_ok:
+        return "Market context"
+    if fit_count <= 1:
+        return "Study only"
+    return "Wait for confirmation"
+
+
+def playbook_fit_color(label: str) -> str:
+    if label == "Playbook fit":
+        return "green"
+    if label == "Developing setup":
+        return "blue"
+    if label == "Wait for confirmation":
+        return "orange"
+    if label == "Market context":
+        return "violet"
+    return "gray"
+
+
+def data_quality_badge(source: Any) -> tuple[str, str]:
+    source_text = str(source or "Unknown")
+    lowered = source_text.lower()
+    if "finnhub" in lowered:
+        return "Finnhub quote", "green"
+    if "yahoo finance api" in lowered:
+        return "Yahoo candles", "blue"
+    if "yahoo finance" in lowered:
+        return "Yahoo quote", "blue"
+    if "learning" in lowered:
+        return "Learning fallback", "orange"
+    return source_text[:22], "gray"
+
+
+CATALYST_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "Earnings": ("earnings", "eps", "revenue", "guidance", "quarter", "q1", "q2", "q3", "q4"),
+    "Contract": ("contract", "award", "deal", "partnership", "customer", "order", "launch"),
+    "FDA/regulatory": ("fda", "approval", "clinical", "trial", "phase", "patent", "regulatory"),
+    "Analyst": ("upgrade", "downgrade", "price target", "initiates", "rating"),
+    "Sector": ("ai", "quantum", "crypto", "semiconductor", "space", "robotics", "ev"),
+    "M&A": ("acquisition", "merger", "buyout", "takeover"),
+}
+
+RISK_NEWS_KEYWORDS: tuple[str, ...] = (
+    "offering",
+    "dilution",
+    "bankruptcy",
+    "investigation",
+    "sec",
+    "lawsuit",
+    "halt",
+    "delisting",
+    "reverse split",
+)
+
+
+def catalyst_tags(headline: str, summary: str = "") -> list[str]:
+    text = f"{headline} {summary}".lower()
+    tags = [label for label, words in CATALYST_KEYWORDS.items() if any(word in text for word in words)]
+    if any(word in text for word in RISK_NEWS_KEYWORDS):
+        tags.insert(0, "Risk headline")
+    return list(dict.fromkeys(tags))[:4]
+
+
+def catalyst_score(news: list[dict[str, Any]]) -> tuple[str, str]:
+    if not news:
+        return "No news", "gray"
+
+    score = 0
+    for item in news[:5]:
+        tags = catalyst_tags(str(item.get("headline") or ""), str(item.get("summary") or ""))
+        for tag in tags:
+            if tag in {"Contract", "FDA/regulatory", "Earnings"}:
+                score += 2
+            elif tag in {"Analyst", "Sector", "M&A"}:
+                score += 1
+            elif tag == "Risk headline":
+                score -= 3
+
+    if score >= 4:
+        return "Strong catalyst", "green"
+    if score >= 2:
+        return "Catalyst watch", "blue"
+    if score < 0:
+        return "News risk", "red"
+    return "Unclear catalyst", "gray"
+
+
+def setup_check_items(analysis: dict[str, Any]) -> list[tuple[str, bool, str]]:
+    price = safe_float(analysis.get("Price"))
+    gain = safe_float(analysis.get("Daily gain %"), 0) or 0
+    float_m = safe_float(analysis.get("Float M"))
+    rvol = safe_float(analysis.get("RVOL"), 0) or 0
+    ema9 = safe_float(analysis.get("EMA 9"))
+    ema20 = safe_float(analysis.get("EMA 20"))
+    risk_reward = safe_float(analysis.get("Risk/reward"), 0) or 0
+    status = live_status(analysis)
+
+    price_ok = price is not None and DEFAULT_RULES["min_price"] <= price <= DEFAULT_RULES["max_price"]
+    float_ok = float_m is not None and float_m <= DEFAULT_RULES["max_float_m"]
+    trend_ok = price is not None and ema9 is not None and ema20 is not None and price > ema9 > ema20
+    action_ok = status in {"Breakout trigger", "In buy zone", "Near buy zone"}
+    return [
+        ("Price", price_ok, money(price)),
+        ("Gap", gain >= DEFAULT_RULES["min_gain_pct"], pct(gain)),
+        ("Float", float_ok, f"{float_m:.1f}M" if float_m is not None else "n/a"),
+        ("RVOL", rvol >= DEFAULT_RULES["min_rvol"], f"{rvol:.1f}x"),
+        ("Trend", trend_ok, "above EMAs" if trend_ok else "needs hold"),
+        ("Risk", risk_reward >= 1.4, f"{risk_reward:.2f}R"),
+        ("Action", action_ok, status),
+    ]
+
+
+def setup_completion(analysis: dict[str, Any]) -> tuple[int, int]:
+    checks = setup_check_items(analysis)
+    return sum(1 for _, passed, _ in checks if passed), len(checks)
+
+
 def get_secret(name: str) -> str:
     value = ""
     try:
@@ -494,7 +632,7 @@ def load_history(
     prepost: bool = True,
 ) -> tuple[pd.DataFrame, str]:
     ticker = ticker.strip().upper()
-    if prefer_live and yf is not None:
+    if prefer_live:
         try:
             df = yahoo_chart_api_history(ticker, period=period, interval=interval, prepost=prepost)
             if not df.empty and len(df) >= 5:
@@ -503,21 +641,22 @@ def load_history(
         except Exception as exc:
             print(f"[live-history] Yahoo chart API failed for {ticker} {period}/{interval}: {exc}", flush=True)
 
-        try:
-            yf.set_tz_cache_location(str(DATA_DIR / "yfinance_cache"))
-            raw = yf.Ticker(ticker).history(
-                period=period,
-                interval=interval,
-                auto_adjust=False,
-                prepost=prepost,
-                timeout=10,
-            )
-            df = normalize_history(raw)
-            if not df.empty and len(df) >= 5:
-                return df, f"Yahoo Finance {interval}"
-            print(f"[live-history] yfinance returned no usable bars for {ticker} {period}/{interval}", flush=True)
-        except Exception as exc:
-            print(f"[live-history] yfinance failed for {ticker} {period}/{interval}: {exc}", flush=True)
+        if yf is not None:
+            try:
+                yf.set_tz_cache_location(str(DATA_DIR / "yfinance_cache"))
+                raw = yf.Ticker(ticker).history(
+                    period=period,
+                    interval=interval,
+                    auto_adjust=False,
+                    prepost=prepost,
+                    timeout=10,
+                )
+                df = normalize_history(raw)
+                if not df.empty and len(df) >= 5:
+                    return df, f"Yahoo Finance {interval}"
+                print(f"[live-history] yfinance returned no usable bars for {ticker} {period}/{interval}", flush=True)
+            except Exception as exc:
+                print(f"[live-history] yfinance failed for {ticker} {period}/{interval}: {exc}", flush=True)
 
     return learning_history(ticker, period_days(period)), "Learning data"
 
@@ -655,20 +794,28 @@ def render_news_items(news: list[dict[str, Any]], empty_message: str = "No Finnh
         st.caption(empty_message)
         return
 
+    label, color = catalyst_score(news)
+    st.badge(label, icon=":material/article:", color=color)
+
     for item in news:
         headline = str(item.get("headline") or "Untitled news")
         source = str(item.get("source") or "News")
         url = str(item.get("url") or "")
         published = timestamp_label(item.get("datetime"))
         summary = str(item.get("summary") or "").strip()
+        tags = catalyst_tags(headline, summary)
         with st.container(border=True):
             if url:
                 st.markdown(f"**[{headline}]({url})**")
             else:
                 st.markdown(f"**{headline}**")
+            if tags:
+                with st.container(horizontal=True):
+                    for tag in tags:
+                        st.badge(tag, color="red" if tag == "Risk headline" else "blue")
             st.caption(f"{source} | {published}")
             if summary:
-                st.write(summary[:360] + ("..." if len(summary) > 360 else ""))
+                st.markdown(markdown_text(summary[:360] + ("..." if len(summary) > 360 else "")))
 
 
 @st.cache_data(ttl=20, max_entries=40, show_spinner=False)
@@ -829,6 +976,13 @@ def build_trade_plan(stats: dict[str, Any], history: pd.DataFrame) -> dict[str, 
     }
 
 
+def entry_confirmation_text(plan: dict[str, Any]) -> str:
+    trigger = safe_float(plan.get("Entry trigger price"))
+    if trigger is not None:
+        return f"a break over {money(trigger)}"
+    return str(plan.get("Entry trigger", "confirmation")).replace("Break over", "a break over")
+
+
 def score_setup(stats: dict[str, Any], plan: dict[str, Any]) -> tuple[int, str, str, list[str], list[str]]:
     price = float(stats["Price"])
     gain = float(stats["Daily gain %"])
@@ -899,6 +1053,9 @@ def analyze_ticker(
     stats = latest_market_stats(ticker, history, source, live_stats=live_stats)
     plan = build_trade_plan(stats, history)
     score, setup, confidence, reasons, warnings = score_setup(stats, plan)
+    fit = playbook_fit_label(stats, score)
+    data_quality, _ = data_quality_badge(stats.get("Data source", source))
+    status = live_status({**stats, **plan})
 
     return {
         **stats,
@@ -906,11 +1063,14 @@ def analyze_ticker(
         "AI score": int(score),
         "Setup": setup,
         "Confidence": confidence,
+        "Playbook fit": fit,
+        "Data quality": data_quality,
+        "Status": status,
         "Reasons": reasons,
         "Warnings": warnings,
         "Plan": (
             f"Watch {stats['Ticker']} for a clean hold inside {plan['Buy zone']} and only consider a "
-            f"paper entry after {plan['Entry trigger']}. Keep risk defined near {plan['Stop']}."
+            f"paper entry after {entry_confirmation_text(plan)}. Keep risk defined near {plan['Stop']}."
         ),
     }
 
@@ -950,17 +1110,23 @@ def run_scan(
             history, _ = load_history(row["Ticker"], period="3mo", interval="1d", prefer_live=True)
             plan = build_trade_plan(row, history) if not history.empty else {}
             score, setup, confidence, reasons, warnings = score_setup(row, plan) if plan else (0, "Live watch", "Low", [], [])
+            fit = playbook_fit_label(row, score)
+            data_quality, _ = data_quality_badge(row.get("Data source"))
+            status = live_status({**row, **plan}) if plan else "Watching"
             enriched = {
                 **row,
                 **plan,
                 "AI score": int(score),
                 "Setup": setup,
                 "Confidence": confidence,
+                "Playbook fit": fit,
+                "Data quality": data_quality,
+                "Status": status,
                 "Reasons": reasons,
                 "Warnings": warnings,
                 "Plan": (
                     f"Watch {row['Ticker']} for a clean hold inside {plan.get('Buy zone', 'the pullback zone')} "
-                    f"and only consider a paper entry after {plan.get('Entry trigger', 'confirmation')}."
+                    f"and only consider a paper entry after {entry_confirmation_text(plan)}."
                 ),
             }
             rows.append(enriched)
@@ -1045,6 +1211,8 @@ def broad_market_scan(tickers: tuple[str, ...], max_names: int = 80) -> pd.DataF
                 "AI score": int(score),
                 "Setup": setup,
                 "Confidence": confidence,
+                "Playbook fit": playbook_fit_label(stats, score),
+                "Data quality": data_quality_badge(stats.get("Data source", source))[0],
                 "Status": live_status({**stats, **plan}) if plan else "Watching",
                 "Reasons": reasons,
                 "Warnings": warnings,
@@ -1060,7 +1228,9 @@ def broad_market_scan(tickers: tuple[str, ...], max_names: int = 80) -> pd.DataF
 def scan_columns(df: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "Ticker",
+        "Playbook fit",
         "Company",
+        "Status",
         "Price",
         "Daily gain %",
         "Float M",
@@ -1068,6 +1238,7 @@ def scan_columns(df: pd.DataFrame) -> pd.DataFrame:
         "AI score",
         "Setup",
         "Confidence",
+        "Data quality",
         "Buy zone",
         "Entry trigger",
         "Stop",
@@ -1107,6 +1278,9 @@ def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
         on_select="rerun",
         selection_mode="single-row",
         column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", pinned=True),
+            "Playbook fit": st.column_config.TextColumn("Fit"),
+            "Status": st.column_config.TextColumn("Status"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
             "Daily gain %": st.column_config.NumberColumn("Gain", format="%.1f%%"),
             "Float M": st.column_config.NumberColumn("Float", format="%.1fM"),
@@ -1124,6 +1298,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         return
     columns = [
         "Ticker",
+        "Playbook fit",
         "Company",
         "Status",
         "Price",
@@ -1131,6 +1306,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         "RVOL",
         "Volume",
         "AI score",
+        "Data quality",
         "Entry trigger",
         "Stop",
         "Target 1",
@@ -1146,6 +1322,8 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         on_select="rerun",
         selection_mode="single-row",
         column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", pinned=True),
+            "Playbook fit": st.column_config.TextColumn("Fit"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
             "Daily gain %": st.column_config.NumberColumn("Gain", format="%.2f%%"),
             "RVOL": st.column_config.NumberColumn("RVOL", format="%.1fx"),
@@ -1553,11 +1731,23 @@ def status_cards(cards: list[tuple[str, str, str]]) -> None:
 def header(title: str, subtitle: str | None = None) -> None:
     st.title(title)
     if subtitle:
-        st.caption(subtitle)
+        st.caption(markdown_text(subtitle))
     st.caption(
         "Educational paper-trading tool. Verify live data, news, float, halts, and risk before making real trades. "
         "This is not financial advice."
     )
+
+
+def render_setup_checks(analysis: dict[str, Any]) -> None:
+    passed, total = setup_completion(analysis)
+    st.markdown(f"**Setup checks: {passed}/{total} ready**")
+    with st.container(horizontal=True):
+        for name, ok, detail in setup_check_items(analysis):
+            st.badge(
+                f"{name}: {detail}",
+                icon=":material/check_circle:" if ok else ":material/radio_button_unchecked:",
+                color="green" if ok else "orange",
+            )
 
 
 def default_scan(prefer_live: bool = True) -> pd.DataFrame:
@@ -1579,6 +1769,11 @@ def render_plan_card(analysis: dict[str, Any]) -> None:
         top[1].metric("Price", money(analysis["Price"]), pct(analysis["Daily gain %"]))
         top[2].metric("RVOL", f"{analysis['RVOL']:.1f}x", f"Float {analysis['Float M']:.1f}M")
         top[3].metric("AI score", f"{analysis['AI score']}/100", analysis["Data source"])
+        fit = analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score")))
+        data_quality, data_color = data_quality_badge(analysis.get("Data source"))
+        with st.container(horizontal=True):
+            st.badge(str(fit), icon=":material/filter_alt:", color=playbook_fit_color(str(fit)))
+            st.badge(data_quality, icon=":material/database:", color=data_color)
         st.caption(
             f"Source: {analysis.get('Data source', 'n/a')} | "
             f"Market: {analysis.get('Market state', 'n/a')} | "
@@ -1586,7 +1781,8 @@ def render_plan_card(analysis: dict[str, Any]) -> None:
             f"Float: {analysis.get('Float source', 'estimate')}"
         )
 
-        st.write(analysis["Plan"])
+        render_setup_checks(analysis)
+        st.markdown(markdown_text(analysis["Plan"]))
         levels = st.columns(4)
         levels[0].metric("Buy zone", analysis["Buy zone"])
         levels[1].metric("Entry", analysis["Entry trigger"])
@@ -1597,12 +1793,12 @@ def render_plan_card(analysis: dict[str, Any]) -> None:
         with reason_col:
             st.markdown("**Why it is on watch**")
             for reason in analysis["Reasons"]:
-                st.write(f"- {reason}")
+                st.markdown(markdown_text(f"- {reason}"))
         with warning_col:
             st.markdown("**Risk checks**")
             if analysis["Warnings"]:
                 for warning in analysis["Warnings"]:
-                    st.write(f"- {warning}")
+                    st.markdown(markdown_text(f"- {warning}"))
             else:
                 st.write("- No major rule warnings in this model.")
 
@@ -1611,7 +1807,9 @@ def ai_action_summary(analysis: dict[str, Any]) -> tuple[str, str]:
     status = live_status(analysis)
     ticker = analysis.get("Ticker", "This ticker")
     price = money(safe_float(analysis.get("Price")))
-    entry = analysis.get("Entry trigger", "the trigger")
+    entry = str(analysis.get("Entry trigger", "the trigger"))
+    entry_level = entry.removeprefix("Break over ").strip()
+    entry_phrase = f"over {entry_level}" if entry_level and entry_level != entry else entry
     buy_zone = analysis.get("Buy zone", "the buy zone")
     stop = analysis.get("Stop", "the stop")
     target = analysis.get("Target 1", "target 1")
@@ -1636,12 +1834,12 @@ def ai_action_summary(analysis: dict[str, Any]) -> tuple[str, str]:
     if status == "In buy zone":
         return (
             "In buy zone",
-            f"{ticker} is trading around {price}, inside the planned buy zone of {buy_zone}. Wait for confirmation near {entry}; do not buy just because it touched the zone.",
+            f"{ticker} is trading around {price}, inside the planned buy zone of {buy_zone}. Wait for confirmation {entry_phrase}; do not buy just because it touched the zone.",
         )
     if status == "Near buy zone":
         return (
             "Getting close",
-            f"{ticker} is near the plan area. Let it come to you, then look for a clean hold and a break over {entry}.",
+            f"{ticker} is near the plan area. Let it come to you, then look for a clean hold and a break {entry_phrase}.",
         )
     if status == "Below stop":
         return (
@@ -1650,8 +1848,28 @@ def ai_action_summary(analysis: dict[str, Any]) -> tuple[str, str]:
         )
     return (
         "Watch only",
-        f"{ticker} is not at the ideal action point yet. The current plan is buy zone {buy_zone}, confirmation {entry}, stop {stop}, and target {target}.",
+        f"{ticker} is not at the ideal action point yet. The current plan is buy zone {buy_zone}, confirmation {entry_phrase}, stop {stop}, and target {target}.",
     )
+
+
+def wait_coaching(analysis: dict[str, Any], label: str) -> list[str]:
+    warnings = [str(warning) for warning in analysis.get("Warnings", [])]
+    guidance: list[str] = []
+    if label == "Study only":
+        guidance.append("Use it for context or learning, not as a primary low-float momentum idea.")
+    if label == "Watch only":
+        guidance.append("Wait for price to come into the buy zone or break the trigger with real volume.")
+    if label == "Plan invalid":
+        guidance.append("Do not force a new entry from this plan. Rebuild the setup after a fresh base forms.")
+    if any("10% gapper" in warning for warning in warnings):
+        guidance.append("Skip the aggressive gapper playbook until the daily move and volume confirm demand.")
+    if any("over 10 million" in warning for warning in warnings):
+        guidance.append("Treat this as a slower context stock unless it has exceptional volume and a fresh catalyst.")
+    if any("RVOL" in warning or "volume" in warning.lower() for warning in warnings):
+        guidance.append("Volume is not strong enough yet; avoid guessing before buyers show up.")
+    if not guidance:
+        guidance.append("Keep the stop and target written before any paper order is approved.")
+    return list(dict.fromkeys(guidance))[:4]
 
 
 def render_ai_decision_panel(analysis: dict[str, Any]) -> None:
@@ -1668,7 +1886,11 @@ def render_ai_decision_panel(analysis: dict[str, Any]) -> None:
         color = "orange"
     with st.container(border=True):
         st.badge(label, icon=":material/psychology:", color=color)
-        st.write(message)
+        st.markdown(markdown_text(message))
+        if label in {"Study only", "Watch only", "Plan invalid"}:
+            st.markdown("**Best next action**")
+            for item in wait_coaching(analysis, label):
+                st.write(f"- {item}")
         st.caption("This is a paper-trading decision aid. It does not execute orders and it is not financial advice.")
 
 
@@ -1682,17 +1904,23 @@ def rebuild_analysis_from_history(
     stats = latest_market_stats(ticker, history, source, live_stats=live_stats)
     plan = build_trade_plan(stats, history)
     score, setup, confidence, reasons, warnings = score_setup(stats, plan)
+    fit = playbook_fit_label(stats, score)
+    data_quality, _ = data_quality_badge(stats.get("Data source", source))
+    status = live_status({**stats, **plan})
     return {
         **stats,
         **plan,
         "AI score": int(score),
         "Setup": setup,
         "Confidence": confidence,
+        "Playbook fit": fit,
+        "Data quality": data_quality,
+        "Status": status,
         "Reasons": reasons,
         "Warnings": warnings,
         "Plan": (
             f"Watch {stats['Ticker']} for a clean hold inside {plan['Buy zone']} and only consider a "
-            f"paper entry after {plan['Entry trigger']}. Keep risk defined near {plan['Stop']}."
+            f"paper entry after {entry_confirmation_text(plan)}. Keep risk defined near {plan['Stop']}."
         ),
     }
 
@@ -1716,6 +1944,11 @@ def render_plotly_trading_chart(
     muted = palette["muted_soft"]
     up = palette["up_bright"]
     down = palette["down"]
+    show_ema9 = bool(st.session_state.get("chart_layer_ema9", True))
+    show_ema20 = bool(st.session_state.get("chart_layer_ema20", True))
+    show_vwap = bool(st.session_state.get("chart_layer_vwap", True))
+    show_buy_zone = bool(st.session_state.get("chart_layer_buy_zone", True))
+    show_plan_levels = bool(st.session_state.get("chart_layer_plan_levels", True))
     fig = make_subplots(
         rows=2,
         cols=1,
@@ -1740,11 +1973,15 @@ def render_plotly_trading_chart(
         col=1,
     )
 
-    for line_name, color, width in [
-        ("EMA 9", palette["blue"], 1.7),
-        ("EMA 20", palette["violet"], 1.7),
-        ("VWAP", palette["orange"], 2.1),
-    ]:
+    line_specs = []
+    if show_ema9:
+        line_specs.append(("EMA 9", palette["blue"], 1.7))
+    if show_ema20:
+        line_specs.append(("EMA 20", palette["violet"], 1.7))
+    if show_vwap:
+        line_specs.append(("VWAP", palette["orange"], 2.1))
+
+    for line_name, color, width in line_specs:
         fig.add_trace(
             go.Scatter(
                 x=chart_df["Time"],
@@ -1779,7 +2016,7 @@ def render_plotly_trading_chart(
     end_time = chart_df["Time"].iloc[-1]
     buy_low = safe_float(analysis.get("Buy low"))
     buy_high = safe_float(analysis.get("Buy high"))
-    if buy_low is not None and buy_high is not None:
+    if show_buy_zone and buy_low is not None and buy_high is not None:
         fig.add_shape(
             type="rect",
             x0=start_time,
@@ -1811,12 +2048,13 @@ def render_plotly_trading_chart(
             col=1,
         )
 
-    add_level("Current", current_price, text, "solid")
-    add_level("Buy low", analysis.get("Buy low"), palette["cyan"])
-    add_level("Buy high", analysis.get("Buy high"), palette["cyan"])
-    add_level("Stop", analysis.get("Stop price"), down)
-    add_level("Target 1", analysis.get("Target 1 price"), up)
-    add_level("Previous close", analysis.get("Previous close"), muted)
+    if show_plan_levels:
+        add_level("Current", current_price, text, "solid")
+        add_level("Buy low", analysis.get("Buy low"), palette["cyan"])
+        add_level("Buy high", analysis.get("Buy high"), palette["cyan"])
+        add_level("Stop", analysis.get("Stop price"), down)
+        add_level("Target 1", analysis.get("Target 1 price"), up)
+        add_level("Previous close", analysis.get("Previous close"), muted)
 
     fig.update_layout(
         height=chart_height,
@@ -2094,6 +2332,14 @@ def render_chart_panel(
     if prefer_live and source != "Learning data" and analysis.get("Data source") == "Learning data":
         analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=True)
 
+    chart_quality, chart_color = data_quality_badge(source)
+    st.badge(f"Chart source: {chart_quality}", icon=":material/candlestick_chart:", color=chart_color)
+    if prefer_live and source == "Learning data":
+        st.warning(
+            "The live chart feed did not return enough candles, so this view is showing learning fallback data.",
+            icon=":material/wifi_off:",
+        )
+
     render_ai_decision_panel(analysis)
     render_plan_card(analysis)
     render_candlestick_chart(history, analysis, max_candles=max_candles)
@@ -2145,10 +2391,12 @@ def tracker_row(analysis: dict[str, Any], track_type: str) -> dict[str, Any]:
     entry = safe_float(analysis.get("Entry trigger price"))
     stop = safe_float(analysis.get("Stop price"))
     target = safe_float(analysis.get("Target 1 price"))
+    data_quality, _ = data_quality_badge(analysis.get("Data source"))
     return {
         "Track": track_type,
         "Ticker": analysis.get("Ticker"),
         "Status": live_status(analysis),
+        "Playbook fit": analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score"))),
         "Price": price,
         "Daily gain %": safe_float(analysis.get("Daily gain %"), 0) or 0,
         "RVOL": safe_float(analysis.get("RVOL"), 0) or 0,
@@ -2159,6 +2407,7 @@ def tracker_row(analysis: dict[str, Any], track_type: str) -> dict[str, Any]:
         "Target 1": target,
         "Distance to entry %": ((entry - price) / price * 100) if entry and price else None,
         "Risk to stop %": ((price - stop) / price * 100) if stop and price else None,
+        "Data quality": data_quality,
         "Data source": analysis.get("Data source", "n/a"),
         "Quote time": analysis.get("Quote time", "n/a"),
     }
@@ -2219,6 +2468,9 @@ def show_tracker_table(df: pd.DataFrame) -> None:
         width="stretch",
         hide_index=True,
         column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", pinned=True),
+            "Status": st.column_config.TextColumn("Status"),
+            "Playbook fit": st.column_config.TextColumn("Fit"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
             "Daily gain %": st.column_config.NumberColumn("Gain", format="%.1f%%"),
             "RVOL": st.column_config.NumberColumn("RVOL", format="%.1fx"),
@@ -2483,13 +2735,20 @@ def page_charts() -> None:
     auto_refresh = control_cols[1].toggle("Auto-refresh chart", value=True, key="chart_auto_refresh_enabled")
     default_window_index = 0 if interval == "1m" else 1
     window_label = control_cols[2].selectbox("Visible candles", list(candle_windows), index=default_window_index)
+    with control_cols[3].popover("Chart layers", icon=":material/tune:"):
+        st.toggle("EMA 9", value=True, key="chart_layer_ema9")
+        st.toggle("EMA 20", value=True, key="chart_layer_ema20")
+        st.toggle("VWAP", value=True, key="chart_layer_vwap")
+        st.toggle("Buy zone shading", value=True, key="chart_layer_buy_zone")
+        st.toggle("Plan levels", value=True, key="chart_layer_plan_levels")
+        st.caption("Zoom, pan, and drawing tools are in the chart toolbar.")
     ticker = custom_ticker or selected_ticker
     st.session_state.selected_ticker = ticker
     max_candles = candle_windows[window_label]
     prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
 
     if interval == "1m":
-        control_cols[3].caption(
+        st.caption(
             f"Data mode: {'live intraday' if prefer_live else 'learning'}. "
             "1-minute candles are easiest to see on the 1d range with Last 90 or Last 180 selected."
         )
@@ -2515,7 +2774,7 @@ def page_ai_coach() -> None:
 
     with st.container(border=True):
         st.markdown("**Paper-trade checklist**")
-        st.checkbox("Price is between $2 and $20", value=2 <= analysis["Price"] <= 20)
+        st.checkbox("Price is between \\$2 and \\$20", value=2 <= analysis["Price"] <= 20)
         st.checkbox("Daily gain is at least 10%", value=analysis["Daily gain %"] >= 10)
         st.checkbox("Float is under 10M shares", value=analysis["Float M"] <= 10)
         st.checkbox("RVOL is at least 3x", value=analysis["RVOL"] >= 3)
@@ -2708,7 +2967,7 @@ def page_learn() -> None:
         with cols[0]:
             with st.container(border=True):
                 st.markdown("**The setup this app is built around**")
-                st.write("- Price: $2 to $20 for the small-account momentum style.")
+                st.markdown(markdown_text("- Price: $2 to $20 for the small-account momentum style."))
                 st.write("- Daily gain: at least 10%, usually found through top-gapper scans.")
                 st.write("- Float: preferably under 10M shares, because small supply can move faster.")
                 st.write("- RVOL: at least 3x, showing today is much more active than normal.")
@@ -2729,6 +2988,14 @@ def page_learn() -> None:
             st.write("3. Open Charts and confirm 1-minute/5-minute trend, VWAP, volume, and news catalyst.")
             st.write("4. Write the entry, stop, and target before any paper trade.")
             st.write("5. Save the result in Journal and review what happened.")
+
+        with st.container(border=True):
+            st.markdown("**Scanner labels**")
+            st.write("- Playbook fit: price, gain, float, RVOL, and score are all lined up.")
+            st.write("- Developing setup: most rules are close, but it still needs confirmation.")
+            st.write("- Wait for confirmation: do not chase; wait for the buy zone or trigger.")
+            st.write("- Market context: useful for SPY, QQQ, NVDA, and leaders, but not the small-float playbook.")
+            st.write("- Study only: good for learning, not a primary paper-trade idea right now.")
 
     elif track == "Routine":
         cols = st.columns(3)
@@ -2792,8 +3059,8 @@ def page_learn() -> None:
         with cols[1]:
             with st.container(border=True):
                 st.markdown("**Position sizing example**")
-                st.write("If a paper account risks $25 and the entry is $5.00 with a $4.75 stop, risk is $0.25/share.")
-                st.write("$25 / $0.25 = 100 shares.")
+                st.markdown(markdown_text("If a paper account risks $25 and the entry is $5.00 with a $4.75 stop, risk is $0.25/share."))
+                st.markdown(markdown_text("$25 / $0.25 = 100 shares."))
                 st.write("This app helps write the plan, but you still approve every trade idea.")
 
         with st.container(border=True):
