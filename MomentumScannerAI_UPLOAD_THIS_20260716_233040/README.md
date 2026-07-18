@@ -40,6 +40,8 @@ When those keys are present, the app tries Alpaca IEX candles for regular stocks
 
 The premium candle chart uses TradingView Lightweight Charts from `assets/lightweight-charts.standalone.production.js`, with an online fallback if that local file is missing.
 
+The TradingView-style chart includes window presets, zoom in/out, back/forward, latest, fit-to-context, a buy-zone band, and entry/stop/take-profit chips. Candles stay green for up candles and red for down candles.
+
 ## Data confidence
 
 The app shows a data stack panel and source brief so users can see whether Alpaca IEX, Finnhub, Yahoo fallback, or learning data is powering the current view. The Learn page includes a direct data-source lesson at:

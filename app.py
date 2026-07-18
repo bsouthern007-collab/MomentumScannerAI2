@@ -3975,6 +3975,12 @@ def lightweight_chart_payload(
     palette = theme_palette()
     up = "#00C805"
     down = "#FF375F"
+    show_ema9 = bool(st.session_state.get("chart_layer_ema9", True))
+    show_ema20 = bool(st.session_state.get("chart_layer_ema20", True))
+    show_vwap = bool(st.session_state.get("chart_layer_vwap", True))
+    show_buy_zone = bool(st.session_state.get("chart_layer_buy_zone", True))
+    show_plan_levels = bool(st.session_state.get("chart_layer_plan_levels", True))
+    show_ai_signals = bool(st.session_state.get("chart_layer_ai_signals", True))
 
     for _, row in clean_df.iterrows():
         candle_time = chart_timestamp_seconds(row["Time"])
@@ -4022,18 +4028,20 @@ def lightweight_chart_payload(
             )
 
     add_price_line("Current", safe_float(current_price), palette["text"], "solid")
-    add_price_line("Buy low", levels["buy_low"], "#6B7280")
-    add_price_line("Buy high", levels["buy_high"], "#6B7280")
-    add_price_line("Entry", levels["entry"], up)
-    add_price_line("Stop", levels["stop"], down)
-    add_price_line("TP1", levels["target_1"], up)
-    add_price_line("TP2", levels["target_2"], "#86EFAC")
+    if show_buy_zone:
+        add_price_line("Buy low", levels["buy_low"], palette["cyan"])
+        add_price_line("Buy high", levels["buy_high"], palette["cyan"])
+    if show_plan_levels:
+        add_price_line("Entry", levels["entry"], up)
+        add_price_line("Stop", levels["stop"], down)
+        add_price_line("TP1", levels["target_1"], up)
+        add_price_line("TP2", levels["target_2"], "#86EFAC")
 
     markers: list[dict[str, Any]] = []
     if candles:
         last_time = candles[-1]["time"]
         status = live_status(analysis)
-        if status in {"Breakout trigger", "In buy zone", "Near buy zone"}:
+        if show_ai_signals and status in {"Breakout trigger", "In buy zone", "Near buy zone"}:
             markers.append(
                 {
                     "time": last_time,
@@ -4043,7 +4051,7 @@ def lightweight_chart_payload(
                     "text": "AI entry watch",
                 }
             )
-        elif status == "Below stop":
+        elif show_ai_signals and status == "Below stop":
             markers.append(
                 {
                     "time": last_time,
@@ -4054,15 +4062,31 @@ def lightweight_chart_payload(
                 }
             )
 
+    buy_zone = None
+    if show_buy_zone and levels["buy_low"] is not None and levels["buy_high"] is not None:
+        buy_zone = {
+            "low": round(float(min(levels["buy_low"], levels["buy_high"])), 4),
+            "high": round(float(max(levels["buy_low"], levels["buy_high"])), 4),
+        }
+
+    level_summary = [
+        {"label": "Entry", "value": money(levels["entry"]), "tone": "up", "detail": "trigger"},
+        {"label": "Stop", "value": money(levels["stop"]), "tone": "down", "detail": "invalid"},
+        {"label": "TP1", "value": money(levels["target_1"]), "tone": "up", "detail": "trim"},
+        {"label": "TP2", "value": money(levels["target_2"]), "tone": "up", "detail": "runner"},
+    ]
+
     return {
         "ticker": str(analysis.get("Ticker", "Stock")),
         "candles": candles,
         "volume": volume,
-        "ema9": chart_series_points(clean_df, "EMA 9"),
-        "ema20": chart_series_points(clean_df, "EMA 20"),
-        "vwap": chart_series_points(clean_df, "VWAP"),
+        "ema9": chart_series_points(clean_df, "EMA 9") if show_ema9 else [],
+        "ema20": chart_series_points(clean_df, "EMA 20") if show_ema20 else [],
+        "vwap": chart_series_points(clean_df, "VWAP") if show_vwap else [],
         "priceLines": price_lines,
         "markers": markers,
+        "buyZone": buy_zone,
+        "levelSummary": level_summary if show_plan_levels else [],
         "visibleCount": int(visible_candles or min(len(candles), 390)),
         "activeEndIndex": int(active_end_index),
         "palette": palette,
@@ -4096,20 +4120,30 @@ def render_lightweight_trading_chart(
       <span id="tw-status"></span>
       <a class="tw-credit" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">Lightweight Charts by TradingView</a>
     </div>
-    <div class="tw-buttons" aria-label="Chart zoom buttons">
-      <span>Zoom</span>
-      <button data-range="30">30</button>
-      <button data-range="45">45 candles</button>
-      <button data-range="90">90</button>
-      <button data-range="180">180</button>
-      <button data-range="390">390 / day</button>
-      <button data-range="all">Context</button>
+    <div class="tw-controls">
+      <div class="tw-buttons" aria-label="Chart window buttons">
+        <span>Window</span>
+        <button data-range="30" title="Show 30 candles">30</button>
+        <button data-range="45" title="Show 45 candles">45</button>
+        <button data-range="90" title="Show 90 candles">90</button>
+        <button data-range="180" title="Show 180 candles">180</button>
+        <button data-range="390" title="Show about one full trading day">1 day</button>
+        <button data-range="all" title="Fit all loaded candles">Fit</button>
+      </div>
+      <div class="tw-nav-buttons" aria-label="Chart navigation buttons">
+        <button data-action="zoom-out" title="Zoom out">-</button>
+        <button data-action="zoom-in" title="Zoom in">+</button>
+        <button data-action="back" title="Step back through older candles">Back</button>
+        <button data-action="forward" title="Step forward">Forward</button>
+        <button data-action="latest" title="Jump to latest candles">Latest</button>
+      </div>
     </div>
   </div>
   <div class="tw-subbar">
     <div id="tw-legend" class="tw-legend"></div>
     <div class="tw-hint">Wheel zoom | Drag pan | Double-click reset</div>
   </div>
+  <div id="tw-planbar" class="tw-planbar"></div>
   <div class="tw-stage">
     <div id="tw-chart" class="tw-chart"></div>
     <canvas id="tw-wick-layer" class="tw-wick-layer" aria-hidden="true"></canvas>
@@ -4126,7 +4160,15 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   const wickCanvas = document.getElementById("tw-wick-layer");
   const wickContext = wickCanvas.getContext("2d");
   const legend = document.getElementById("tw-legend");
+  const planbar = document.getElementById("tw-planbar");
   const status = document.getElementById("tw-status");
+  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[char]));
   const fmt = (value) => Number.isFinite(Number(value)) ? "$" + Number(value).toFixed(2) : "n/a";
   const fmtVol = (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
   const fmtTime = (time) => new Date(Number(time) * 1000).toLocaleString([], {
@@ -4137,6 +4179,17 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   });
 
   status.textContent = payload.ticker + " | " + payload.status;
+  if (payload.levelSummary && payload.levelSummary.length) {
+    planbar.innerHTML = payload.levelSummary.map((item) =>
+      "<div class='tw-level-chip tw-level-" + esc(item.tone) + "'>" +
+      "<span>" + esc(item.label) + "</span>" +
+      "<strong>" + esc(item.value) + "</strong>" +
+      "<em>" + esc(item.detail) + "</em>" +
+      "</div>"
+    ).join("");
+  } else {
+    planbar.innerHTML = "<div class='tw-level-chip'><span>Levels</span><strong>Hidden</strong><em>toggle on</em></div>";
+  }
   if (!window.LightweightCharts) {
     container.innerHTML = "<div class='tw-error'>The chart library did not load. Switch Chart style to Backup Plotly in Chart controls.</div>";
     return;
@@ -4306,6 +4359,27 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     return Math.max(size.width / count, 2);
   };
 
+  const drawBuyZone = (size) => {
+    if (!payload.buyZone) return;
+    const yHigh = candleSeries.priceToCoordinate(payload.buyZone.high);
+    const yLow = candleSeries.priceToCoordinate(payload.buyZone.low);
+    if (!Number.isFinite(yHigh) || !Number.isFinite(yLow)) return;
+    const top = Math.min(yHigh, yLow);
+    const height = Math.max(Math.abs(yLow - yHigh), 2);
+    wickContext.fillStyle = "rgba(34, 211, 238, 0.10)";
+    wickContext.fillRect(0, top, size.width, height);
+    wickContext.strokeStyle = "rgba(34, 211, 238, 0.56)";
+    wickContext.lineWidth = 1;
+    wickContext.setLineDash([5, 5]);
+    wickContext.beginPath();
+    wickContext.moveTo(0, Math.round(top) + 0.5);
+    wickContext.lineTo(size.width, Math.round(top) + 0.5);
+    wickContext.moveTo(0, Math.round(top + height) + 0.5);
+    wickContext.lineTo(size.width, Math.round(top + height) + 0.5);
+    wickContext.stroke();
+    wickContext.setLineDash([]);
+  };
+
   const drawSegment = (x, y1, y2, color, width) => {
     if (!Number.isFinite(x) || !Number.isFinite(y1) || !Number.isFinite(y2)) return;
     wickContext.strokeStyle = color;
@@ -4335,6 +4409,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     wickContext.clearRect(0, 0, size.width, size.height);
     const spacing = visibleSpacing(size);
     const wickWidth = spacing >= 18 ? 2.8 : spacing >= 10 ? 2.2 : spacing >= 6 ? 1.65 : 1.25;
+    drawBuyZone(size);
     wickContext.shadowColor = "rgba(0, 0, 0, 0.18)";
     wickContext.shadowBlur = 1.5;
     const range = chart.timeScale().getVisibleLogicalRange();
@@ -4385,31 +4460,83 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     updateLegend(bar, param.time);
   });
 
-  const setRange = (range) => {
+  const rangeButtons = Array.from(document.querySelectorAll(".tw-buttons button"));
+  const navButtons = Array.from(document.querySelectorAll(".tw-nav-buttons button"));
+  let activeRange = String(Math.min(payload.visibleCount || 90, payload.candles.length));
+  const maxIndex = () => Math.max(payload.candles.length - 1, 0);
+  const markActive = (range) => {
+    rangeButtons.forEach((button) => button.classList.toggle("active", button.dataset.range === String(range)));
+  };
+  const clampLogicalRange = (from, to) => {
+    const min = -8;
+    const max = maxIndex() + 12;
+    const span = Math.max(to - from, 5);
+    let nextFrom = Number(from);
+    let nextTo = Number(to);
+    if (nextFrom < min) {
+      nextFrom = min;
+      nextTo = nextFrom + span;
+    }
+    if (nextTo > max) {
+      nextTo = max;
+      nextFrom = nextTo - span;
+    }
+    if (nextFrom < min) nextFrom = min;
+    return { from: nextFrom, to: nextTo };
+  };
+  const applyLogicalRange = (from, to) => {
+    chart.timeScale().setVisibleLogicalRange(clampLogicalRange(from, to));
+    requestAnimationFrame(drawWicks);
+  };
+  const setRange = (range, anchorValue) => {
     if (range === "all") {
+      activeRange = "all";
       chart.timeScale().fitContent();
-      chart.timeScale().applyOptions({ barSpacing: 8, minBarSpacing: 5 });
+      chart.timeScale().applyOptions({ barSpacing: 7, minBarSpacing: 3 });
       markActive("all");
       requestAnimationFrame(drawWicks);
       return;
     }
     const count = Math.max(Number(range) || 90, 10);
-    const spacing = count <= 30 ? 24 : count <= 45 ? 20 : count <= 90 ? 16 : count <= 180 ? 12 : 9;
-    chart.timeScale().applyOptions({ barSpacing: spacing, minBarSpacing: 8 });
-    const anchor = Math.min(Math.max(Number(payload.activeEndIndex ?? payload.candles.length - 1), 0), payload.candles.length - 1);
+    activeRange = String(range);
+    const spacing = count <= 30 ? 28 : count <= 45 ? 24 : count <= 90 ? 18 : count <= 180 ? 13 : 9;
+    chart.timeScale().applyOptions({ barSpacing: spacing, minBarSpacing: 4 });
+    const anchorSeed = anchorValue ?? payload.activeEndIndex ?? payload.candles.length - 1;
+    const anchor = Math.min(Math.max(Number(anchorSeed), 0), payload.candles.length - 1);
     const end = anchor + 8;
     const start = Math.max(anchor - count + 1, 0);
-    chart.timeScale().setVisibleLogicalRange({ from: start, to: end });
+    applyLogicalRange(start, end);
     markActive(String(range));
-    requestAnimationFrame(drawWicks);
   };
 
-  const rangeButtons = Array.from(document.querySelectorAll(".tw-buttons button"));
-  const markActive = (range) => {
-    rangeButtons.forEach((button) => button.classList.toggle("active", button.dataset.range === String(range)));
+  const shiftWindow = (direction) => {
+    const range = chart.timeScale().getVisibleLogicalRange();
+    if (!range) return;
+    const span = Math.max(range.to - range.from, 8);
+    const shift = span * 0.72 * Number(direction);
+    applyLogicalRange(range.from + shift, range.to + shift);
+    markActive("");
+  };
+  const zoomWindow = (factor) => {
+    const range = chart.timeScale().getVisibleLogicalRange();
+    if (!range) return;
+    const center = (range.from + range.to) / 2;
+    const span = Math.max((range.to - range.from) * factor, 8);
+    applyLogicalRange(center - span / 2, center + span / 2);
+    markActive("");
   };
   rangeButtons.forEach((button) => {
     button.addEventListener("click", () => setRange(button.dataset.range));
+  });
+  navButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.action;
+      if (action === "back") shiftWindow(-1);
+      if (action === "forward") shiftWindow(1);
+      if (action === "zoom-in") zoomWindow(0.72);
+      if (action === "zoom-out") zoomWindow(1.32);
+      if (action === "latest") setRange(activeRange === "all" ? Math.min(payload.visibleCount || 90, payload.candles.length) : activeRange, payload.activeEndIndex);
+    });
   });
   container.addEventListener("dblclick", () => setRange(Math.min(payload.visibleCount || 90, payload.candles.length)));
 
@@ -4478,7 +4605,20 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   .tw-credit:hover {
     color: __BLUE__;
   }
+  .tw-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 7px 12px;
+  }
   .tw-buttons {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tw-nav-buttons {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -4489,7 +4629,8 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     font-size: 12px;
     margin-right: 2px;
   }
-  .tw-buttons button {
+  .tw-buttons button,
+  .tw-nav-buttons button {
     border: 1px solid __BORDER__;
     background: __PANEL__;
     color: __TEXT__;
@@ -4499,7 +4640,8 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     font: inherit;
     font-size: 12px;
   }
-  .tw-buttons button:hover {
+  .tw-buttons button:hover,
+  .tw-nav-buttons button:hover {
     border-color: __BLUE__;
     color: __BLUE__;
   }
@@ -4534,6 +4676,45 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     border-bottom: 1px solid __BORDER__;
     background: __PANEL__;
   }
+  .tw-planbar {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 7px 12px;
+    border-bottom: 1px solid __BORDER__;
+    background: color-mix(in srgb, __PANEL_ALT__ 72%, __PANEL__ 28%);
+  }
+  .tw-level-chip {
+    min-width: 116px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: 7px;
+    border: 1px solid __BORDER__;
+    border-radius: 6px;
+    background: __PANEL__;
+    padding: 5px 8px;
+    color: __TEXT__;
+  }
+  .tw-level-chip span {
+    color: __MUTED__;
+    font-size: 11px;
+    font-weight: 760;
+    text-transform: uppercase;
+  }
+  .tw-level-chip strong {
+    font-size: 13px;
+    font-weight: 850;
+  }
+  .tw-level-chip em {
+    color: __MUTED__;
+    font-size: 11px;
+    font-style: normal;
+  }
+  .tw-level-up strong { color: __UP__; }
+  .tw-level-down strong { color: __DOWN__; }
   .tw-hint {
     color: __MUTED__;
     font-size: 12px;
@@ -4542,7 +4723,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   }
   .tw-stage {
     position: relative;
-    height: calc(100% - 82px);
+    height: calc(100% - 122px);
     background: __PANEL__;
   }
   .tw-chart {
@@ -4574,17 +4755,25 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   }
   .tw-chart canvas {
     image-rendering: auto;
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
   @media (max-width: 760px) {
-    .tw-toolbar, .tw-subbar {
+    .tw-toolbar, .tw-subbar, .tw-controls {
       align-items: flex-start;
       flex-direction: column;
+    }
+    .tw-controls {
+      width: 100%;
+    }
+    .tw-level-chip {
+      min-width: calc(50% - 4px);
     }
     .tw-hint {
       padding: 0 12px 8px;
     }
     .tw-stage {
-      height: calc(100% - 130px);
+      height: calc(100% - 180px);
     }
   }
   .tw-error {
@@ -4614,7 +4803,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     for key, value in replacements.items():
         component_html = component_html.replace(key, str(value))
 
-    components.html(component_html, height=chart_height + 6, width=1280, scrolling=False)
+    components.html(component_html, height=chart_height + 6, scrolling=False)
     return True
 
 
