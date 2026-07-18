@@ -1149,13 +1149,9 @@ def render_news_items(news: list[dict[str, Any]], empty_message: str = "No Finnh
                 st.markdown(markdown_text(summary[:360] + ("..." if len(summary) > 360 else "")))
 
 
-@st.cache_data(ttl=20, max_entries=40, show_spinner=False)
-def live_quote_stats(ticker: str) -> dict[str, Any] | None:
+@st.cache_data(ttl=20, max_entries=150, show_spinner=False)
+def yahoo_quote_stats(ticker: str) -> dict[str, Any] | None:
     ticker = normalize_user_symbol(ticker)
-    finnhub_stats = finnhub_quote_stats(ticker)
-    if finnhub_stats:
-        return finnhub_stats
-
     if yf is None:
         return None
 
@@ -1197,6 +1193,15 @@ def live_quote_stats(ticker: str) -> dict[str, Any] | None:
         return quote_to_stats(quote)
     except Exception:
         return None
+
+
+@st.cache_data(ttl=20, max_entries=40, show_spinner=False)
+def live_quote_stats(ticker: str) -> dict[str, Any] | None:
+    ticker = normalize_user_symbol(ticker)
+    finnhub_stats = finnhub_quote_stats(ticker)
+    if finnhub_stats:
+        return finnhub_stats
+    return yahoo_quote_stats(ticker)
 
 
 @st.cache_data(ttl=20, max_entries=20, show_spinner=False)
@@ -1632,6 +1637,7 @@ def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
         st.info("No matches with the current filters.")
         return
     display_df = scan_columns(df)
+    st.caption("Accuracy check: every row shows data quality, source, and quote time. Open Charts for the full price audit before trusting a plan.")
     event = st.dataframe(
         display_df,
         width="stretch",
@@ -1676,6 +1682,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         "Quote time",
     ]
     display_df = df[[column for column in columns if column in df.columns]]
+    st.caption("Accuracy check: source and quote time are shown on each row. Use the chart price audit if a number looks stale or unusual.")
     event = st.dataframe(
         display_df,
         width="stretch",
@@ -1694,6 +1701,107 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         },
     )
     remember_selected_ticker(display_df, event)
+
+
+def action_queue_frame(df: pd.DataFrame, limit: int = 8) -> pd.DataFrame:
+    if df.empty or "Ticker" not in df.columns:
+        return pd.DataFrame()
+
+    status_rank = {
+        "Breakout trigger": 0,
+        "In buy zone": 1,
+        "Near buy zone": 2,
+        "Momentum active": 3,
+        "Watching": 4,
+        "Below stop": 5,
+        "No quote": 6,
+    }
+    action_map = {
+        "Breakout trigger": ("Review approval", "At or above trigger. Confirm news, spread, and risk."),
+        "In buy zone": ("Wait for trigger", "Inside buy area. Do not buy until confirmation."),
+        "Near buy zone": ("Watch closely", "Close to the planned area."),
+        "Momentum active": ("Check chart", "Momentum is active, but the entry still needs review."),
+        "Below stop": ("Skip", "Plan is invalid until a new setup forms."),
+        "No quote": ("Verify data", "No usable quote returned."),
+    }
+    rows: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        raw = row.to_dict()
+        ticker = normalize_user_symbol(raw.get("Ticker"))
+        if not ticker:
+            continue
+        status = str(raw.get("Status") or live_status(raw))
+        action, why = action_map.get(status, ("Study", "Use it for context until the setup improves."))
+        price = safe_float(raw.get("Price"))
+        entry = safe_float(raw.get("Entry")) or safe_float(raw.get("Entry trigger price"))
+        stop = safe_float(raw.get("Stop")) or safe_float(raw.get("Stop price"))
+        target = safe_float(raw.get("Target 1")) or safe_float(raw.get("Target 1 price"))
+        distance = safe_float(raw.get("Distance to entry %"))
+        if distance is None and price is not None and entry is not None and price:
+            distance = (entry - price) / price * 100
+        score = safe_float(raw.get("AI score"), 0) or 0
+        rvol = safe_float(raw.get("RVOL"), 0) or 0
+        rows.append(
+            {
+                "_Rank": status_rank.get(status, 9),
+                "Stock": ticker,
+                "Action": action,
+                "Status": status,
+                "Price": price,
+                "Entry": entry,
+                "Stop": stop,
+                "Target 1": target,
+                "To entry %": distance,
+                "AI score": score,
+                "RVOL": rvol,
+                "Why": why,
+                "Data": raw.get("Data quality") or data_quality_badge(raw.get("Data source"))[0],
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame()
+    queue = pd.DataFrame(rows).sort_values(["_Rank", "AI score", "RVOL"], ascending=[True, False, False]).head(limit)
+    return queue.drop(columns=["_Rank"]).reset_index(drop=True)
+
+
+def render_action_queue(df: pd.DataFrame, key: str) -> None:
+    queue = action_queue_frame(df)
+    with st.container(border=True):
+        st.markdown("**Live action queue**")
+        st.caption("Ranked by action status first, then AI score and RVOL. Select a row to send that stock into Charts, AI Coach, and Trade Desk.")
+        if queue.empty:
+            st.info("No action queue rows yet. Run a scan or add stocks to the watchlist.")
+            return
+
+        event = st.dataframe(
+            queue,
+            width="stretch",
+            hide_index=True,
+            key=key,
+            on_select="rerun",
+            selection_mode="single-row",
+            column_config={
+                "Stock": st.column_config.TextColumn("Stock", pinned=True),
+                "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                "Entry": st.column_config.NumberColumn("Entry", format="$%.2f"),
+                "Stop": st.column_config.NumberColumn("Stop", format="$%.2f"),
+                "Target 1": st.column_config.NumberColumn("Target 1", format="$%.2f"),
+                "To entry %": st.column_config.NumberColumn("To entry", format="%.2f%%"),
+                "AI score": st.column_config.ProgressColumn("AI score", min_value=0, max_value=100),
+                "RVOL": st.column_config.NumberColumn("RVOL", format="%.1fx"),
+            },
+        )
+        try:
+            selected_rows = list(event.selection.rows)
+        except Exception:
+            selected_rows = []
+        if selected_rows:
+            selected = str(queue.iloc[selected_rows[0]]["Stock"])
+            st.session_state.selected_ticker = selected
+            with st.container(horizontal=True):
+                st.badge(f"{selected} selected", icon=":material/check_circle:", color="green")
+                st.caption("Open Charts, AI Coach, or Trade Desk from the left menu to continue with this stock.")
 
 
 def market_clock_frame() -> pd.DataFrame:
@@ -2561,6 +2669,297 @@ def render_training_progress_panel() -> None:
         st.write("- Use Flashcards for terms before the open.")
         st.write("- Use Quiz before approving paper trades.")
         st.write("- Mark weak topics for review, then check the same idea on Charts.")
+
+
+def chart_timestamp_label(value: Any) -> str:
+    try:
+        timestamp = pd.Timestamp(value)
+        if pd.isna(timestamp):
+            return "n/a"
+        return timestamp.strftime("%Y-%m-%d %I:%M %p")
+    except Exception:
+        return "n/a"
+
+
+def price_audit_frame(
+    ticker: str,
+    history: pd.DataFrame,
+    analysis: dict[str, Any],
+    chart_source: str,
+) -> pd.DataFrame:
+    plan_price = safe_float(analysis.get("Price"))
+    rows: list[dict[str, Any]] = []
+
+    def add_row(source: str, price: float | None, timestamp: str, notes: str) -> None:
+        diff = (price - plan_price) if price is not None and plan_price is not None else None
+        diff_pct = (diff / plan_price * 100) if diff is not None and plan_price else None
+        rows.append(
+            {
+                "Source": source,
+                "Price": price,
+                "Difference": diff,
+                "Difference %": diff_pct,
+                "Time": timestamp,
+                "Notes": notes,
+            }
+        )
+
+    add_row(
+        "Active app price",
+        plan_price,
+        str(analysis.get("Quote time", "n/a")),
+        str(analysis.get("Data source", "n/a")),
+    )
+
+    if history is not None and not history.empty:
+        last = history.iloc[-1]
+        add_row(
+            "Chart last candle",
+            safe_float(last.get("Close")),
+            chart_timestamp_label(history.index[-1]),
+            chart_source,
+        )
+
+    finnhub_stats = finnhub_quote_stats(ticker)
+    if finnhub_stats:
+        add_row(
+            "Finnhub quote",
+            safe_float(finnhub_stats.get("Price")),
+            str(finnhub_stats.get("Quote time", "n/a")),
+            str(finnhub_stats.get("Market state", "n/a")),
+        )
+
+    yahoo_stats = yahoo_quote_stats(ticker)
+    if yahoo_stats:
+        add_row(
+            "Yahoo quote",
+            safe_float(yahoo_stats.get("Price")),
+            str(yahoo_stats.get("Quote time", "n/a")),
+            str(yahoo_stats.get("Market state", "n/a")),
+        )
+
+    return pd.DataFrame(rows)
+
+
+def render_price_audit_panel(
+    ticker: str,
+    history: pd.DataFrame,
+    analysis: dict[str, Any],
+    chart_source: str,
+) -> None:
+    audit = price_audit_frame(ticker, history, analysis, chart_source)
+    plan_price = safe_float(analysis.get("Price"))
+    chart_price = None
+    if history is not None and not history.empty:
+        chart_price = safe_float(history.iloc[-1].get("Close"))
+    chart_diff_pct = abs((chart_price - plan_price) / plan_price * 100) if chart_price is not None and plan_price else None
+    live_rows = audit[audit["Source"].isin(["Finnhub quote", "Yahoo quote"])] if not audit.empty else pd.DataFrame()
+
+    status_label = "Price source unknown"
+    status_color = "gray"
+    if "learning" in str(chart_source).lower():
+        status_label = "Learning fallback"
+        status_color = "orange"
+    elif plan_price is None:
+        status_label = "No active quote"
+        status_color = "red"
+    elif chart_diff_pct is not None and chart_diff_pct > 1.0:
+        status_label = "Price mismatch"
+        status_color = "orange"
+    elif not live_rows.empty:
+        status_label = "Quote checked"
+        status_color = "green"
+
+    with st.container(border=True):
+        st.markdown("**Price audit**")
+        with st.container(horizontal=True):
+            st.badge(status_label, icon=":material/price_check:", color=status_color)
+            st.badge(str(analysis.get("Data source", "n/a")), icon=":material/database:", color=data_quality_badge(analysis.get("Data source"))[1])
+            st.badge(str(chart_source), icon=":material/candlestick_chart:", color=data_quality_badge(chart_source)[1])
+
+        cols = st.columns(4)
+        cols[0].metric("Active price", money(plan_price), border=True)
+        cols[1].metric("Chart last", money(chart_price), border=True)
+        cols[2].metric("Chart difference", pct(chart_diff_pct), border=True)
+        cols[3].metric("Quote time", str(analysis.get("Quote time", "n/a")), border=True)
+
+        if status_label == "Price mismatch":
+            st.warning(
+                "The chart candle and active quote are not matching closely. This can happen with delayed/free feeds, premarket/after-hours data, or fast-moving stocks.",
+                icon=":material/warning:",
+            )
+        elif status_label == "Learning fallback":
+            st.warning(
+                "This stock is using learning fallback data. Do not treat these prices as live market prices.",
+                icon=":material/school:",
+            )
+        else:
+            st.caption("Free feeds can still be delayed. Use this panel to verify the source and time before trusting a paper-trade plan.")
+
+        if not audit.empty:
+            st.dataframe(
+                audit,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Source": st.column_config.TextColumn("Source", pinned=True),
+                    "Price": st.column_config.NumberColumn("Price", format="$%.4f"),
+                    "Difference": st.column_config.NumberColumn("Diff", format="$%.4f"),
+                    "Difference %": st.column_config.NumberColumn("Diff %", format="%.3f%%"),
+                },
+            )
+
+
+def asset_type_label(analysis: dict[str, Any]) -> str:
+    ticker = str(analysis.get("Ticker", "")).upper()
+    sector = str(analysis.get("Sector", "")).lower()
+    if ticker.startswith("^") or "index" in sector:
+        return "market index"
+    if ticker in {"SPY", "QQQ", "IWM", "DIA"} or "etf" in sector:
+        return "ETF"
+    return "stock"
+
+
+def article_for(label: str) -> str:
+    return "an" if label[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
+
+
+def beginner_movement_text(analysis: dict[str, Any], asset_type: str) -> str:
+    price = safe_float(analysis.get("Price"))
+    gain = safe_float(analysis.get("Daily gain %"))
+    previous = safe_float(analysis.get("Previous close"))
+    if price is None:
+        return f"The app does not have a usable live price for this {asset_type} yet."
+    if gain is None:
+        return f"It is trading around {money(price)}. The app does not have enough data to explain today's move yet."
+    if abs(gain) < 0.15:
+        return f"It is trading around {money(price)}, nearly flat versus the last close."
+    direction = "up" if gain > 0 else "down"
+    pressure = "buyers are pushing it higher" if gain > 0 else "sellers are pressuring it lower"
+    previous_text = f" from the previous close near {money(previous)}" if previous else ""
+    return f"It is trading around {money(price)}, {direction} {pct(abs(gain))}{previous_text}. In plain English, {pressure} today."
+
+
+def beginner_attention_text(analysis: dict[str, Any]) -> str:
+    rvol = safe_float(analysis.get("RVOL"))
+    volume = safe_float(analysis.get("Volume"))
+    volume_text = compact_number(volume) if volume is not None else "n/a"
+    if rvol is None:
+        return f"Volume is {volume_text}, but the app cannot compare it with normal activity yet."
+    if rvol >= 5:
+        level = "extremely high"
+    elif rvol >= 3:
+        level = "high"
+    elif rvol >= 1.5:
+        level = "picking up"
+    else:
+        level = "quiet"
+    return f"Volume is {volume_text}. RVOL is {rvol:.1f}x, which means attention is {level} versus normal trading."
+
+
+def beginner_float_text(analysis: dict[str, Any], asset_type: str) -> str:
+    float_m = safe_float(analysis.get("Float M"))
+    if asset_type in {"ETF", "market index"}:
+        return f"This is {article_for(asset_type)} {asset_type}, so the small-float scanner rule is mainly market context here."
+    if float_m is None:
+        return "The app does not have a float estimate yet. That makes small-cap risk harder to judge."
+    if float_m <= DEFAULT_RULES["max_float_m"]:
+        return f"Float is about {float_m:.1f}M shares, which is low enough to match the app's small-float momentum rule."
+    return f"Float is about {float_m:.1f}M shares, above the app's preferred small-float rule. It may move differently than a low-float runner."
+
+
+def first_readable(items: list[Any] | tuple[Any, ...], fallback: str, limit: int = 2) -> str:
+    clean = [str(item).strip() for item in items if str(item).strip()]
+    if not clean:
+        return fallback
+    if len(clean) == 1 or limit == 1:
+        return clean[0]
+    return "; ".join(clean[:limit])
+
+
+def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | None = None) -> None:
+    ticker = str(analysis.get("Ticker", "Stock"))
+    company = str(analysis.get("Company", ticker))
+    sector = str(analysis.get("Sector", "n/a"))
+    source = str(analysis.get("Data source", "n/a"))
+    quote_time = str(analysis.get("Quote time", "n/a"))
+    asset_type = asset_type_label(analysis)
+    action_label, action_text = ai_action_summary(analysis)
+    status = live_status(analysis)
+    fit = str(analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score"))))
+    data_quality, data_color = data_quality_badge(source)
+    levels = chart_trade_levels(analysis)
+    warnings = [str(item) for item in analysis.get("Warnings", [])]
+    reasons = [str(item) for item in analysis.get("Reasons", [])]
+    catalyst = str(analysis.get("Catalyst", "")).strip()
+
+    with st.container(border=True):
+        st.markdown("**Plain-English stock guide**")
+        with st.container(horizontal=True):
+            st.badge(action_label, icon=":material/psychology:", color="green" if action_label in {"Trigger active", "In buy zone"} else "orange")
+            st.badge(status, icon=":material/radar:", color="green" if status in {"Breakout trigger", "In buy zone"} else "blue")
+            st.badge(fit, icon=":material/filter_alt:", color=playbook_fit_color(fit))
+            st.badge(data_quality, icon=":material/database:", color=data_color)
+
+        cols = st.columns(4)
+        cols[0].metric("Stock", ticker, company[:34], border=True)
+        cols[1].metric("Price now", money(safe_float(analysis.get("Price"))), pct(safe_float(analysis.get("Daily gain %"))), border=True)
+        cols[2].metric("Attention", f"{safe_float(analysis.get('RVOL'), 0) or 0:.1f}x RVOL", compact_number(safe_float(analysis.get("Volume"))), border=True)
+        cols[3].metric("AI score", f"{int(safe_float(analysis.get('AI score'), 0) or 0)}/100", str(analysis.get("Setup", "n/a")), border=True)
+
+        st.markdown(markdown_text(f"**What it is:** {ticker} is {article_for(asset_type)} {asset_type}. Company/name: {company}. Group: {sector}."))
+        st.markdown(markdown_text(f"**What is happening:** {beginner_movement_text(analysis, asset_type)}"))
+        st.markdown(markdown_text(f"**Why traders care:** {first_readable(reasons, catalyst or 'The app has not found a strong rule-based reason yet.')}"))
+        st.markdown(markdown_text(f"**What the AI helper says:** {action_text}"))
+
+        level_rows = pd.DataFrame(
+            [
+                {
+                    "Level": "Buy zone",
+                    "Number": f"{money(levels['buy_low'])} - {money(levels['buy_high'])}",
+                    "Beginner meaning": "The practice area where a pullback still looks controlled.",
+                },
+                {
+                    "Level": "Entry trigger",
+                    "Number": money(levels["entry"]),
+                    "Beginner meaning": "The confirmation price. Beginners should avoid guessing before this.",
+                },
+                {
+                    "Level": "Stop loss",
+                    "Number": money(levels["stop"]),
+                    "Beginner meaning": "Where the plan is wrong. If this is hit, the practice idea is invalid.",
+                },
+                {
+                    "Level": "Take profit 1",
+                    "Number": money(levels["target_1"]),
+                    "Beginner meaning": "The first planned area to lock in paper-trade reward.",
+                },
+                {
+                    "Level": "Runner target",
+                    "Number": money(levels["target_2"]),
+                    "Beginner meaning": "A second planned exit if the move keeps working.",
+                },
+            ]
+        )
+        st.dataframe(level_rows, width="stretch", hide_index=True)
+
+        explain_cols = st.columns(2)
+        with explain_cols[0]:
+            st.markdown("**Beginner read**")
+            st.write(f"- {beginner_attention_text(analysis)}")
+            st.write(f"- {beginner_float_text(analysis, asset_type)}")
+            st.write("- Entry, stop, and targets are study levels. They are not a guarantee and they are not financial advice.")
+        with explain_cols[1]:
+            st.markdown("**Data trust check**")
+            st.write(f"- Active price source: {source}")
+            st.write(f"- Quote time: {quote_time}")
+            st.write(f"- Chart candle source: {chart_source or source}")
+            if "learning" in f"{source} {chart_source}".lower():
+                st.warning("This stock is using learning fallback data somewhere in the view. Treat it as practice only.", icon=":material/school:")
+            elif warnings:
+                st.write(f"- Main caution: {first_readable(warnings, 'No major warning.', limit=1)}")
+            else:
+                st.write("- No major rule warning from the current model, but still verify news, spread, and risk.")
 
 
 def chart_trade_levels(analysis: dict[str, Any]) -> dict[str, float | None]:
@@ -3698,6 +4097,8 @@ def render_chart_panel(
         f"Chart source: {source}. Last screen refresh: {datetime.now().strftime('%I:%M:%S %p')}. "
         "Free Yahoo data can be real-time or delayed depending on exchange and availability."
     )
+    render_price_audit_panel(ticker, history, analysis, source)
+    render_beginner_stock_summary(analysis, source)
     render_trade_readiness_panel(analysis)
     render_premium_trade_ticket(analysis)
     render_ai_decision_panel(analysis)
@@ -3862,6 +4263,7 @@ def render_live_tracker_body(tickers: tuple[str, ...], include_scan: bool, fragm
             ("In buy zone", str(buy_zone_hits), "good"),
         ]
     )
+    render_action_queue(df, key="live_tracker_action_queue")
 
     st.caption(
         f"Auto-refresh target: every {LIVE_REFRESH_SECONDS} seconds. "
@@ -3920,6 +4322,7 @@ def page_dashboard() -> None:
             ("Top RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
+    render_action_queue(df, key="dashboard_action_queue")
 
     news_symbols = tuple(unique_symbols([str(item) for item in df["Ticker"].head(10).tolist()] + read_watchlist() + CORE_MARKET_TICKERS[:8]))
     news_col, main_col, right_col = st.columns([0.95, 1.35, 0.85], vertical_alignment="top")
@@ -3928,6 +4331,7 @@ def page_dashboard() -> None:
     with main_col:
         st.subheader("Primary watch")
         render_ai_decision_panel(best)
+        render_beginner_stock_summary(best, str(best.get("Data source", "n/a")))
         render_trade_readiness_panel(best)
         render_plan_card(best)
     with right_col:
@@ -3966,6 +4370,7 @@ def page_daily_gameplan() -> None:
             ("RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
+    render_action_queue(df, key="gameplan_action_queue")
 
     st.subheader("Primary watch")
     render_ai_decision_panel(best)
@@ -4017,6 +4422,7 @@ def page_scanner() -> None:
                 ("Best score", f"{int(top['AI score'])}/100", "hot"),
             ]
         )
+        render_action_queue(df, key="scanner_action_queue")
     show_scan_table(df, key="scanner_results_table")
 
 
@@ -4123,6 +4529,7 @@ def page_market_scan() -> None:
             ("Best gain", pct(df.iloc[0]["Daily gain %"]) if not df.empty else "n/a", "good"),
         ]
     )
+    render_action_queue(df, key="market_scan_action_queue")
 
     show_broad_market_table(df)
 
@@ -4225,7 +4632,10 @@ def page_ai_coach() -> None:
     period = cols[1].selectbox("Lookback", ["1mo", "3mo", "6mo", "1y"], index=1)
     prefer_live = cols[2].toggle("Use live Yahoo data", value=True, key="ai_live")
 
-    analysis = analyze_ticker(ticker, period=period, prefer_live=prefer_live)
+    history, source = load_history(ticker, period=period, interval="1d", prefer_live=prefer_live)
+    analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=prefer_live)
+    render_price_audit_panel(ticker, history, analysis, source)
+    render_beginner_stock_summary(analysis, source)
     render_ai_decision_panel(analysis)
     render_plan_card(analysis)
     with st.expander(f":material/article: News catalyst for {analysis.get('Ticker', ticker)}", expanded=True):
@@ -4254,14 +4664,27 @@ def page_watchlist() -> None:
             write_watchlist(watchlist)
             st.rerun()
 
-    for ticker in watchlist:
-        analysis = analyze_ticker(ticker, prefer_live=prefer_live)
+    analyses = [analyze_ticker(ticker, prefer_live=prefer_live) for ticker in watchlist]
+    render_action_queue(pd.DataFrame(analyses), key="watchlist_action_queue")
+
+    for analysis in analyses:
+        ticker = str(analysis.get("Ticker", ""))
+        data_quality, data_color = data_quality_badge(analysis.get("Data source"))
         with st.container(border=True):
             cols = st.columns([1, 1, 1, 1, 1])
             cols[0].metric(ticker, analysis["Setup"])
             cols[1].metric("Price", money(analysis["Price"]), pct(analysis["Daily gain %"]))
             cols[2].metric("RVOL", f"{analysis['RVOL']:.1f}x")
             cols[3].metric("AI score", f"{analysis['AI score']}/100")
+            with st.container(horizontal=True):
+                st.badge(data_quality, icon=":material/database:", color=data_color)
+                st.badge(f"Quote {analysis.get('Quote time', 'n/a')}", icon=":material/schedule:", color="gray")
+            st.caption(
+                markdown_text(
+                    f"Beginner read: {beginner_movement_text(analysis, asset_type_label(analysis))} "
+                    f"{beginner_attention_text(analysis)}"
+                )
+            )
             if cols[4].button("Study", key=f"study_{ticker}"):
                 st.session_state.selected_ticker = ticker
                 st.session_state.watchlist_study_ticker = ticker
@@ -4272,7 +4695,9 @@ def page_watchlist() -> None:
     study_ticker = st.session_state.get("watchlist_study_ticker")
     if study_ticker:
         st.subheader(f"{study_ticker} study plan")
-        render_plan_card(analyze_ticker(study_ticker, prefer_live=prefer_live))
+        study_analysis = analyze_ticker(study_ticker, prefer_live=prefer_live)
+        render_beginner_stock_summary(study_analysis, str(study_analysis.get("Data source", "n/a")))
+        render_plan_card(study_analysis)
         render_news_items(finnhub_company_news(study_ticker, days=5, limit=5))
 
 
@@ -4289,7 +4714,10 @@ def page_trade_desk() -> None:
     period = cols[2].selectbox("Lookback", ["1d", "5d", "1mo", "3mo"], index=1)
     interval = cols[3].selectbox("Candle", ["1m", "5m", "15m", "1d"], index=1)
 
-    analysis = analyze_ticker(ticker, period=period, interval=interval, prefer_live=True)
+    history, source = load_history(ticker, period=period, interval=interval, prefer_live=True)
+    analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=True)
+    render_price_audit_panel(ticker, history, analysis, source)
+    render_beginner_stock_summary(analysis, source)
     render_ai_decision_panel(analysis)
 
     order = stage_order_from_analysis(analysis, risk_dollars=risk_dollars)
@@ -4471,6 +4899,23 @@ def page_learn() -> None:
             st.write("4. Read the AI decision. If it says Study only or Watch only, do not force a trade.")
             st.write("5. Open Trade Desk, set your max paper risk, review the staged order, and only approve if every checklist item makes sense.")
             st.write("6. Open Journal and record what happened, even if you skipped the trade.")
+
+        with st.container(border=True):
+            st.markdown("**How to read any stock page**")
+            reading_guide = pd.DataFrame(
+                [
+                    {"Field": "Price now", "What it means": "Where the stock is trading right now.", "Beginner move": "Compare it with entry, stop, and target before doing anything."},
+                    {"Field": "Daily move", "What it means": "How far price moved from the previous close.", "Beginner move": "A big green number means attention, not an automatic buy."},
+                    {"Field": "RVOL", "What it means": "Today's volume compared with normal volume.", "Beginner move": "The app wants high attention, usually 3x or more for this playbook."},
+                    {"Field": "Float", "What it means": "Roughly how many shares can trade publicly.", "Beginner move": "Low float can move fast, but it can also reverse fast."},
+                    {"Field": "Price audit", "What it means": "The app checks source, time, and whether price feeds disagree.", "Beginner move": "If it says mismatch or fallback, use the stock for study only."},
+                    {"Field": "AI score", "What it means": "A checklist score based on the app's rules.", "Beginner move": "Use it to focus your study, not as a profit promise."},
+                    {"Field": "Entry trigger", "What it means": "The confirmation price.", "Beginner move": "Avoid guessing early. Wait for confirmation on the chart."},
+                    {"Field": "Stop loss", "What it means": "Where the idea is wrong.", "Beginner move": "If this loss feels too big, reduce paper size or skip."},
+                    {"Field": "Take profit", "What it means": "A planned exit where reward starts to pay for risk.", "Beginner move": "Know the reward before the entry."},
+                ]
+            )
+            st.dataframe(reading_guide, width="stretch", hide_index=True)
 
         with st.container(border=True):
             st.markdown("**What the app levels mean**")
