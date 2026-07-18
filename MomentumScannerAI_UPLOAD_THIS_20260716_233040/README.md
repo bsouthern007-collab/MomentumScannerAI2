@@ -24,3 +24,18 @@ FINNHUB_API_KEY = "your_key_here"
 ```
 
 Restart the app after saving. Finnhub turns on better live quotes and stock news.
+
+## Optional free Alpaca IEX data
+
+Use Alpaca paper-trading keys first. Add these to `.streamlit/secrets.toml`:
+
+```toml
+ALPACA_API_KEY = "your_key_id_here"
+ALPACA_SECRET_KEY = "your_secret_key_here"
+```
+
+When those keys are present, the app tries Alpaca IEX candles for regular stocks before falling back to Yahoo and learning data. Broad indexes like S&P 500 still use Yahoo-style symbols.
+
+## Chart engine
+
+The premium candle chart uses TradingView Lightweight Charts from `assets/lightweight-charts.standalone.production.js`, with an online fallback if that local file is missing.

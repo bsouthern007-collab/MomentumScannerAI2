@@ -4,7 +4,7 @@ import json
 import math
 import os
 import html
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote as url_quote
@@ -28,10 +28,24 @@ try:
 except Exception:  # pragma: no cover - the app still works without yfinance
     yf = None
 
+try:
+    from alpaca.data.enums import DataFeed
+    from alpaca.data.historical import StockHistoricalDataClient
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+except Exception:  # pragma: no cover - Alpaca is an optional free data upgrade
+    DataFeed = None
+    StockBarsRequest = None
+    StockHistoricalDataClient = None
+    TimeFrame = None
+    TimeFrameUnit = None
+
 
 APP_DIR = Path(__file__).resolve().parent
 APP_NAME = "Trading for Dummys 101"
 DATA_DIR = APP_DIR / "data"
+ASSETS_DIR = APP_DIR / "assets"
+LIGHTWEIGHT_CHARTS_FILE = ASSETS_DIR / "lightweight-charts.standalone.production.js"
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 JOURNAL_FILE = DATA_DIR / "trade_journal.csv"
 ORDERS_FILE = DATA_DIR / "paper_orders.csv"
@@ -69,6 +83,7 @@ INDEX_PROFILES = {
     "^VIX": {"company": "CBOE Volatility Index", "sector": "Volatility index", "float_m": 0.0, "catalyst": "Market volatility movement"},
 }
 DATA_DIR.mkdir(exist_ok=True)
+ASSETS_DIR.mkdir(exist_ok=True)
 YFINANCE_CACHE_DIR.mkdir(exist_ok=True)
 
 if yf is not None:
@@ -375,6 +390,8 @@ def playbook_fit_color(label: str) -> str:
 def data_quality_badge(source: Any) -> tuple[str, str]:
     source_text = str(source or "Unknown")
     lowered = source_text.lower()
+    if "alpaca" in lowered:
+        return "Alpaca IEX", "green"
     if "finnhub" in lowered:
         return "Finnhub quote", "green"
     if "yahoo finance api" in lowered:
@@ -677,7 +694,15 @@ def get_secret(name: str) -> str:
     except Exception:
         value = ""
     clean = (value or os.environ.get(name, "")).strip()
-    if clean.lower() in {"paste-your-finnhub-key-here", "your_key_here", "your-key-here"}:
+    if clean.lower() in {
+        "paste-your-finnhub-key-here",
+        "paste-your-alpaca-key-id-here",
+        "paste-your-alpaca-secret-key-here",
+        "your_key_here",
+        "your-key-here",
+        "your_secret_here",
+        "your-secret-here",
+    }:
         return ""
     return clean
 
@@ -688,6 +713,37 @@ def finnhub_api_key() -> str:
 
 def finnhub_enabled() -> bool:
     return bool(finnhub_api_key())
+
+
+def alpaca_api_key() -> str:
+    return get_secret("ALPACA_API_KEY") or get_secret("ALPACA_API_KEY_ID") or get_secret("APCA_API_KEY_ID")
+
+
+def alpaca_secret_key() -> str:
+    return get_secret("ALPACA_SECRET_KEY") or get_secret("ALPACA_API_SECRET") or get_secret("APCA_API_SECRET_KEY")
+
+
+def alpaca_enabled() -> bool:
+    return bool(alpaca_api_key() and alpaca_secret_key() and StockHistoricalDataClient is not None)
+
+
+def alpaca_key_marker() -> str:
+    key = alpaca_api_key()
+    secret = alpaca_secret_key()
+    if not key or not secret:
+        return "no-alpaca-key"
+    return f"alpaca-{len(key)}-{key[-4:]}-{len(secret)}"
+
+
+@st.cache_resource(show_spinner=False)
+def alpaca_data_client(marker: str) -> Any | None:
+    if marker == "no-alpaca-key" or StockHistoricalDataClient is None:
+        return None
+    key = alpaca_api_key()
+    secret = alpaca_secret_key()
+    if not key or not secret:
+        return None
+    return StockHistoricalDataClient(api_key=key, secret_key=secret)
 
 
 def finnhub_get(endpoint: str, params: dict[str, Any] | None = None) -> Any:
@@ -953,6 +1009,76 @@ def yahoo_chart_api_history(ticker: str, period: str, interval: str, prepost: bo
     return normalize_history(df)
 
 
+def alpaca_timeframe(interval: str) -> Any | None:
+    if TimeFrame is None or TimeFrameUnit is None:
+        return None
+    interval = str(interval or "1d").lower()
+    if interval == "1d":
+        return TimeFrame.Day
+    if interval == "60m":
+        return TimeFrame.Hour
+    if interval.endswith("m"):
+        minutes = safe_float(interval[:-1])
+        if minutes is not None and 1 <= int(minutes) <= 59:
+            return TimeFrame(int(minutes), TimeFrameUnit.Minute)
+    return None
+
+
+def alpaca_lookback_window(period: str, interval: str) -> tuple[datetime, datetime]:
+    end = datetime.now(timezone.utc)
+    days = period_days(period)
+    if str(interval).endswith("m"):
+        days = max(days, 2)
+    start = end - timedelta(days=days)
+    return start, end
+
+
+@st.cache_data(ttl=20, max_entries=220, show_spinner=False)
+def alpaca_iex_history(ticker: str, period: str, interval: str, api_marker: str) -> pd.DataFrame:
+    ticker = normalize_user_symbol(ticker)
+    if not ticker or ticker.startswith("^") or api_marker == "no-alpaca-key":
+        return pd.DataFrame()
+    if StockBarsRequest is None or DataFeed is None:
+        return pd.DataFrame()
+    timeframe = alpaca_timeframe(interval)
+    if timeframe is None:
+        return pd.DataFrame()
+    client = alpaca_data_client(api_marker)
+    if client is None:
+        return pd.DataFrame()
+    start, end = alpaca_lookback_window(period, interval)
+    request = StockBarsRequest(
+        symbol_or_symbols=ticker,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=DataFeed.IEX,
+        limit=10_000,
+    )
+    bars = client.get_stock_bars(request)
+    raw = bars.dict() if hasattr(bars, "dict") else {}
+    rows = raw.get(ticker) or raw.get(ticker.upper()) or []
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(
+        [
+            {
+                "Open": row.get("open"),
+                "High": row.get("high"),
+                "Low": row.get("low"),
+                "Close": row.get("close"),
+                "Volume": row.get("volume"),
+                "Time": row.get("timestamp"),
+            }
+            for row in rows
+        ]
+    ).dropna(subset=["Open", "High", "Low", "Close", "Volume", "Time"])
+    if df.empty:
+        return pd.DataFrame()
+    df.index = pd.to_datetime(df.pop("Time"), utc=True)
+    return normalize_history(df)
+
+
 @st.cache_data(ttl=20, max_entries=250, show_spinner=False)
 def load_history(
     ticker: str,
@@ -963,6 +1089,15 @@ def load_history(
 ) -> tuple[pd.DataFrame, str]:
     ticker = normalize_user_symbol(ticker)
     if prefer_live:
+        if alpaca_enabled():
+            try:
+                df = alpaca_iex_history(ticker, period=period, interval=interval, api_marker=alpaca_key_marker())
+                if not df.empty and len(df) >= 5:
+                    return df, f"Alpaca IEX {interval}"
+                print(f"[live-history] Alpaca IEX returned no usable bars for {ticker} {period}/{interval}", flush=True)
+            except Exception as exc:
+                print(f"[live-history] Alpaca IEX failed for {ticker} {period}/{interval}: {exc}", flush=True)
+
         try:
             df = yahoo_chart_api_history(ticker, period=period, interval=interval, prepost=prepost)
             if not df.empty and len(df) >= 5:
@@ -1734,6 +1869,13 @@ def action_queue_frame(df: pd.DataFrame, limit: int = 8) -> pd.DataFrame:
         "Below stop": ("Skip", "Plan is invalid until a new setup forms."),
         "No quote": ("Verify data", "No usable quote returned."),
     }
+    confidence_rank = {
+        "High confidence": 0,
+        "Usable for paper": 1,
+        "Verify first": 2,
+        "Practice data": 3,
+        "Practice only": 4,
+    }
     rows: list[dict[str, Any]] = []
     for _, row in df.iterrows():
         raw = row.to_dict()
@@ -1751,9 +1893,11 @@ def action_queue_frame(df: pd.DataFrame, limit: int = 8) -> pd.DataFrame:
             distance = (entry - price) / price * 100
         score = safe_float(raw.get("AI score"), 0) or 0
         rvol = safe_float(raw.get("RVOL"), 0) or 0
+        confidence = str(raw.get("Data confidence") or data_confidence_summary(raw).get("label", "n/a"))
         rows.append(
             {
                 "_Rank": status_rank.get(status, 9),
+                "_ConfidenceRank": confidence_rank.get(confidence, 5),
                 "Stock": ticker,
                 "Action": action,
                 "Status": status,
@@ -1766,14 +1910,14 @@ def action_queue_frame(df: pd.DataFrame, limit: int = 8) -> pd.DataFrame:
                 "RVOL": rvol,
                 "Why": why,
                 "Data": raw.get("Data quality") or data_quality_badge(raw.get("Data source"))[0],
-                "Confidence": raw.get("Data confidence") or data_confidence_summary(raw).get("label", "n/a"),
+                "Confidence": confidence,
             }
         )
 
     if not rows:
         return pd.DataFrame()
-    queue = pd.DataFrame(rows).sort_values(["_Rank", "AI score", "RVOL"], ascending=[True, False, False]).head(limit)
-    return queue.drop(columns=["_Rank"]).reset_index(drop=True)
+    queue = pd.DataFrame(rows).sort_values(["_Rank", "_ConfidenceRank", "AI score", "RVOL"], ascending=[True, True, False, False]).head(limit)
+    return queue.drop(columns=["_Rank", "_ConfidenceRank"]).reset_index(drop=True)
 
 
 def render_action_queue(df: pd.DataFrame, key: str) -> None:
@@ -1814,6 +1958,36 @@ def render_action_queue(df: pd.DataFrame, key: str) -> None:
             with st.container(horizontal=True):
                 st.badge(f"{selected} selected", icon=":material/check_circle:", color="green")
                 st.caption("Open Charts, AI Coach, or Trade Desk from the left menu to continue with this stock.")
+
+
+def data_health_frame(df: pd.DataFrame) -> pd.DataFrame:
+    labels = ["High confidence", "Usable for paper", "Verify first", "Practice data", "Practice only"]
+    counts = {label: 0 for label in labels}
+    if df.empty:
+        return pd.DataFrame([{"Label": label, "Rows": count} for label, count in counts.items()])
+
+    for _, row in df.iterrows():
+        raw = row.to_dict()
+        label = str(raw.get("Data confidence") or data_confidence_summary(raw).get("label", "n/a"))
+        if label not in counts:
+            label = "Practice only" if "practice" in label.lower() else "Verify first"
+        counts[label] += 1
+    return pd.DataFrame([{"Label": label, "Rows": count} for label, count in counts.items()])
+
+
+def render_data_health_summary(df: pd.DataFrame) -> None:
+    health = data_health_frame(df)
+    total = int(health["Rows"].sum()) if not health.empty else 0
+    values = {str(row["Label"]): int(row["Rows"]) for _, row in health.iterrows()}
+    with st.container(border=True):
+        st.markdown("**Data health**")
+        st.caption("Use this before trusting any scanner result. Cleaner data can still be delayed, but verify-first and practice rows need extra caution.")
+        cols = st.columns(4)
+        cols[0].metric("High confidence", str(values.get("High confidence", 0)), border=True)
+        cols[1].metric("Usable for paper", str(values.get("Usable for paper", 0)), border=True)
+        cols[2].metric("Verify first", str(values.get("Verify first", 0)), border=True)
+        practice_total = values.get("Practice data", 0) + values.get("Practice only", 0)
+        cols[3].metric("Practice only", str(practice_total), f"{total} total rows", border=True)
 
 
 def market_clock_frame() -> pd.DataFrame:
@@ -2349,9 +2523,143 @@ def apply_style(mode: str | None = None) -> None:
         }}
         .msa-check-ok {{border-left: 4px solid var(--msa-up);}}
         .msa-check-wait {{border-left: 4px solid var(--msa-orange);}}
+        .msa-ai-command {{
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 8px 0 14px 0;
+            background:
+                linear-gradient(135deg, rgba(0, 200, 5, 0.08), transparent 36%),
+                linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            box-shadow: 0 18px 38px var(--msa-shadow);
+        }}
+        .msa-ai-command:before {{
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: var(--msa-muted-soft);
+        }}
+        .msa-ai-ready:before {{background: var(--msa-up);}}
+        .msa-ai-watch:before {{background: var(--msa-orange);}}
+        .msa-ai-danger:before {{background: var(--msa-down);}}
+        .msa-ai-header {{
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 12px;
+        }}
+        .msa-ai-kicker {{
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 780;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }}
+        .msa-ai-title {{
+            color: var(--msa-text);
+            font-size: clamp(1.6rem, 3vw, 2.25rem);
+            font-weight: 860;
+            line-height: 1.02;
+            margin-top: 4px;
+        }}
+        .msa-ai-detail {{
+            color: var(--msa-muted);
+            font-size: .92rem;
+            line-height: 1.36;
+            margin-top: 7px;
+            max-width: 860px;
+        }}
+        .msa-ai-score {{
+            min-width: 116px;
+            text-align: right;
+            color: var(--msa-text);
+            font-weight: 820;
+        }}
+        .msa-ai-score span {{
+            display: block;
+            color: var(--msa-muted-soft);
+            font-size: .74rem;
+            font-weight: 760;
+            text-transform: uppercase;
+        }}
+        .msa-ai-level-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }}
+        .msa-ai-level {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            padding: 12px;
+            min-height: 104px;
+        }}
+        .msa-ai-level-label {{
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 780;
+            text-transform: uppercase;
+        }}
+        .msa-ai-level-value {{
+            color: var(--msa-text);
+            font-size: clamp(1.35rem, 2.4vw, 1.95rem);
+            font-weight: 860;
+            line-height: 1.06;
+            margin-top: 6px;
+        }}
+        .msa-ai-level-profit .msa-ai-level-value {{color: var(--msa-up);}}
+        .msa-ai-level-danger .msa-ai-level-value {{color: var(--msa-down);}}
+        .msa-ai-level-note {{
+            color: var(--msa-muted);
+            font-size: .78rem;
+            line-height: 1.25;
+            margin-top: 6px;
+        }}
+        .msa-ai-list {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            padding: 12px 13px;
+            height: 100%;
+        }}
+        .msa-ai-list strong {{
+            display: block;
+            color: var(--msa-text);
+            margin-bottom: 7px;
+        }}
+        .msa-ai-list ul {{
+            margin: 0;
+            padding-left: 18px;
+            color: var(--msa-muted);
+        }}
+        .msa-ai-list li {{
+            margin: 5px 0;
+            line-height: 1.32;
+        }}
+        .msa-ai-plain {{
+            border: 1px solid var(--msa-border);
+            border-left: 4px solid var(--msa-blue);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            padding: 11px 13px;
+            margin-top: 12px;
+            line-height: 1.34;
+        }}
         @media (max-width: 900px) {{
             .msa-readiness-command {{
                 grid-template-columns: 1fr;
+            }}
+            .msa-ai-header {{
+                display: block;
+            }}
+            .msa-ai-score {{
+                text-align: left;
+                margin-top: 10px;
             }}
         }}
         </style>
@@ -2542,59 +2850,205 @@ def wait_coaching(analysis: dict[str, Any], label: str) -> list[str]:
     return list(dict.fromkeys(guidance))[:4]
 
 
-def render_ai_decision_panel(analysis: dict[str, Any]) -> None:
+def ai_trade_math(analysis: dict[str, Any]) -> dict[str, Any]:
+    levels = chart_trade_levels(analysis)
+    price = safe_float(analysis.get("Price"))
+    entry = levels["entry"]
+    stop = levels["stop"]
+    target_1 = levels["target_1"]
+    target_2 = levels["target_2"]
+    risk = (entry - stop) if entry is not None and stop is not None and entry > stop else None
+    reward_1 = (target_1 - entry) if target_1 is not None and entry is not None and target_1 > entry else None
+    reward_2 = (target_2 - entry) if target_2 is not None and entry is not None and target_2 > entry else None
+    distance = ((entry - price) / price * 100) if entry is not None and price else None
+    rr_1 = reward_1 / risk if risk and reward_1 is not None else None
+    rr_2 = reward_2 / risk if risk and reward_2 is not None else None
+    return {
+        **levels,
+        "price": price,
+        "risk": risk,
+        "reward_1": reward_1,
+        "reward_2": reward_2,
+        "distance": distance,
+        "rr_1": rr_1,
+        "rr_2": rr_2,
+    }
+
+
+def ai_tone(label: str, status: str) -> tuple[str, str, str]:
+    if label == "Plan invalid" or status == "Below stop":
+        return "danger", "Stand down", "red"
+    if label == "Trigger active" or status == "Breakout trigger":
+        return "ready", "Review paper approval", "green"
+    if label == "In buy zone" or status in {"In buy zone", "Near buy zone", "Momentum active"}:
+        return "watch", "Watch for trigger", "orange"
+    return "hold", "Wait", "gray"
+
+
+def ai_now_steps(analysis: dict[str, Any], label: str, status: str) -> list[str]:
+    math_data = ai_trade_math(analysis)
+    entry = money(math_data["entry"])
+    stop = money(math_data["stop"])
+    risk = money(math_data["risk"])
+    target = money(math_data["target_1"])
+    confidence = data_confidence_summary(analysis).get("label", "Verify first")
+
+    if label == "Trigger active" or status == "Breakout trigger":
+        return [
+            f"Confirm the last candle is holding above {entry}.",
+            f"Check the stop at {stop}; planned risk is {risk} per share.",
+            f"Only approve a paper order if volume, spread, news, and {confidence.lower()} data all make sense.",
+        ]
+    if label == "In buy zone" or status == "In buy zone":
+        return [
+            f"Price is in the buy area, but the actual trigger is still {entry}.",
+            "Wait for buyers to prove it with a clean candle and stronger volume.",
+            f"Target 1 is {target}; skip it if the reward no longer beats the risk.",
+        ]
+    if status in {"Near buy zone", "Momentum active"}:
+        return [
+            "Keep it on watch and let the setup come to you.",
+            f"Set the mental alert around the buy zone and confirmation over {entry}.",
+            "Do not chase a candle that runs too far above the plan.",
+        ]
+    if label == "Plan invalid" or status == "Below stop":
+        return [
+            f"The price is under the stop area near {stop}.",
+            "Treat this plan as broken until a new base forms.",
+            "Rebuild the entry, stop, and targets from fresh candles.",
+        ]
+    return [
+        "Use this as a watchlist idea, not an active setup yet.",
+        f"Wait for price to approach the buy zone and confirm over {entry}.",
+        "Check news and volume again before approving any paper trade.",
+    ]
+
+
+def ai_cancel_rules(analysis: dict[str, Any]) -> list[str]:
+    math_data = ai_trade_math(analysis)
+    price = math_data["price"]
+    entry = math_data["entry"]
+    stop = math_data["stop"]
+    rvol = safe_float(analysis.get("RVOL"), 0) or 0
+    rules = []
+    if stop is not None:
+        rules.append(f"Price loses the stop area near {money(stop)}.")
+    if entry is not None and price is not None and price > entry * 1.04:
+        rules.append("Price is already more than 4% above the trigger and the trade is turning into a chase.")
+    if rvol < DEFAULT_RULES["min_rvol"]:
+        rules.append(f"RVOL is only {rvol:.1f}x, so momentum may not be strong enough yet.")
+    for warning in analysis.get("Warnings", [])[:3]:
+        rules.append(str(warning))
+    rules.append("News turns negative, a halt appears, or the spread is too wide to paper-trade cleanly.")
+    return list(dict.fromkeys(rules))[:5]
+
+
+def beginner_trade_translation(analysis: dict[str, Any], label: str) -> str:
+    math_data = ai_trade_math(analysis)
+    entry = money(math_data["entry"])
+    stop = money(math_data["stop"])
+    target = money(math_data["target_1"])
+    if label == "Trigger active":
+        return f"Plain English: buyers may be confirming the idea now. The paper entry is around {entry}, the safety line is {stop}, and the first place to take profit is {target}."
+    if label == "In buy zone":
+        return f"Plain English: the stock is near the area you wanted, but beginners should still wait for confirmation near {entry} before approving anything."
+    if label == "Plan invalid":
+        return f"Plain English: this setup is broken because price is too close to or under the risk line. Do not reuse this plan until the chart resets."
+    return f"Plain English: this is a watchlist idea. The app is telling you to wait for {entry}, know the stop at {stop}, and check that {target} pays enough reward."
+
+
+def render_html_list(title: str, items: list[str]) -> str:
+    parts = [f"<strong>{html.escape(title)}</strong><ul>"]
+    for item in items:
+        parts.append(f"<li>{html.escape(item)}</li>")
+    parts.append("</ul>")
+    return "".join(parts)
+
+
+def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None = None) -> None:
     label, message = ai_action_summary(analysis)
     status = live_status(analysis)
-    levels = chart_trade_levels(analysis)
-    color = "gray"
-    if label == "Plan invalid":
-        color = "red"
-    elif label == "Study only":
-        color = "gray"
-    elif status in {"Breakout trigger", "In buy zone"}:
-        color = "green"
-    elif status in {"Near buy zone", "Momentum active"}:
-        color = "orange"
+    math_data = ai_trade_math(analysis)
+    tone, action, color = ai_tone(label, status)
+    confidence = data_confidence_summary(analysis, chart_source)
+    passed, total = setup_completion(analysis)
+    score = safe_float(analysis.get("AI score"), 0) or 0
+    rr_1 = f"{math_data['rr_1']:.2f}R" if math_data["rr_1"] is not None else "n/a"
+    rr_2 = f"{math_data['rr_2']:.2f}R" if math_data["rr_2"] is not None else "n/a"
+    distance = pct(math_data["distance"]) if math_data["distance"] is not None else "wait"
+    level_items = [
+        ("Current", money(math_data["price"]), status, "neutral"),
+        ("Entry", money(math_data["entry"]), "Buy only after trigger", "profit"),
+        ("Stop loss", money(math_data["stop"]), "Plan is wrong here", "danger"),
+        ("Take profit 1", money(math_data["target_1"]), f"{rr_1} reward/risk", "profit"),
+        ("Runner target", money(math_data["target_2"]), f"{rr_2} reward/risk", "profit"),
+        ("Risk / share", money(math_data["risk"]), f"To entry: {distance}", "danger"),
+    ]
+    level_parts = ['<div class="msa-ai-level-grid">']
+    for item_label, value, detail, item_tone in level_items:
+        level_parts.append(
+            '<div class="msa-ai-level msa-ai-level-{tone}">'
+            '<div class="msa-ai-level-label">{label}</div>'
+            '<div class="msa-ai-level-value">{value}</div>'
+            '<div class="msa-ai-level-note">{detail}</div>'
+            '</div>'.format(
+                tone=html.escape(item_tone),
+                label=html.escape(item_label),
+                value=html.escape(value),
+                detail=html.escape(str(detail)),
+            )
+        )
+    level_parts.append("</div>")
+
     with st.container(border=True):
-        st.markdown("**AI helper**")
+        st.markdown("**AI assistant**")
         with st.container(horizontal=True):
             st.badge(label, icon=":material/psychology:", color=color)
             st.badge(status, icon=":material/candlestick_chart:", color=color)
-            st.badge("Paper-trade plan", icon=":material/edit_note:", color="blue")
+            st.badge(str(confidence["label"]), icon=":material/verified:", color=str(confidence["color"]))
+            st.badge("Paper approval only", icon=":material/edit_note:", color="blue")
 
-        level_cols = st.columns(4)
-        level_cols[0].metric(
-            "Entry point",
-            money(levels["entry"]),
-            "Buy only after trigger",
-            border=True,
-        )
-        level_cols[1].metric(
-            "Stop loss",
-            money(levels["stop"]),
-            "Idea is wrong here",
-            border=True,
-        )
-        level_cols[2].metric(
-            "Take profit",
-            money(levels["target_1"]),
-            "First trim target",
-            border=True,
-        )
-        level_cols[3].metric(
-            "Runner target",
-            money(levels["target_2"]),
-            "Second target",
-            border=True,
+        st.markdown(
+            """
+            <div class="msa-ai-command msa-ai-{tone}">
+                <div class="msa-ai-header">
+                    <div>
+                        <div class="msa-ai-kicker">AI command center</div>
+                        <div class="msa-ai-title">{action}</div>
+                        <div class="msa-ai-detail">{message}</div>
+                    </div>
+                    <div class="msa-ai-score"><span>Score</span>{score}/100<br><span>Checks</span>{passed}/{total}</div>
+                </div>
+                {levels}
+            </div>
+            """.format(
+                tone=html.escape(tone),
+                action=html.escape(action),
+                message=html.escape(message),
+                score=int(score),
+                passed=passed,
+                total=total,
+                levels="".join(level_parts),
+            ),
+            unsafe_allow_html=True,
         )
 
-        st.markdown("**What the AI is saying right now**")
-        st.markdown(markdown_text(message))
-        if label in {"Study only", "Watch only", "Plan invalid"}:
-            st.markdown("**Best next action**")
-            for item in wait_coaching(analysis, label):
-                st.write(f"- {item}")
-        st.caption("This is a paper-trading decision aid. It does not execute orders and it is not financial advice.")
+        now_items = ai_now_steps(analysis, label, status)
+        cancel_items = ai_cancel_rules(analysis)
+        left, right = st.columns(2)
+        left.markdown(
+            f'<div class="msa-ai-list">{render_html_list("Do this now", now_items)}</div>',
+            unsafe_allow_html=True,
+        )
+        right.markdown(
+            f'<div class="msa-ai-list">{render_html_list("Cancel or wait if", cancel_items)}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="msa-ai-plain">{html.escape(beginner_trade_translation(analysis, label))}</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("Educational paper-trading decision aid. It does not place real trades and it is not financial advice.")
 
 
 def render_trade_readiness_panel(analysis: dict[str, Any]) -> None:
@@ -2766,7 +3220,9 @@ def data_confidence_summary(
             "detail": "This view includes learning fallback data, so use it for practice only.",
         }
 
-    if "finnhub" in source_text:
+    if "alpaca" in source_text:
+        notes.append("Alpaca IEX candle data is available.")
+    elif "finnhub" in source_text:
         notes.append("Finnhub live quote is available.")
     elif "yahoo" in source_text:
         score -= 5
@@ -3344,6 +3800,16 @@ def chart_series_points(chart_df: pd.DataFrame, column: str) -> list[dict[str, f
     return rows
 
 
+@st.cache_data(show_spinner=False)
+def lightweight_charts_script() -> str:
+    if LIGHTWEIGHT_CHARTS_FILE.exists():
+        try:
+            return LIGHTWEIGHT_CHARTS_FILE.read_text(encoding="utf-8").replace("</script", "<\\/script")
+        except Exception:
+            return ""
+    return ""
+
+
 def lightweight_chart_payload(
     chart_df: pd.DataFrame,
     analysis: dict[str, Any],
@@ -3378,6 +3844,16 @@ def lightweight_chart_payload(
             }
         )
 
+    active_end_index = len(candles) - 1
+    for index in range(len(candles) - 1, -1, -1):
+        candle = candles[index]
+        vol = safe_float(volume[index].get("value"), 0) if index < len(volume) else 0
+        has_range = abs(float(candle["high"]) - float(candle["low"])) > 0.001
+        has_body = abs(float(candle["close"]) - float(candle["open"])) > 0.001
+        if (vol or 0) > 0 and (has_range or has_body):
+            active_end_index = index
+            break
+
     levels = chart_trade_levels(analysis)
     price_lines: list[dict[str, Any]] = []
 
@@ -3403,34 +3879,25 @@ def lightweight_chart_payload(
     markers: list[dict[str, Any]] = []
     if candles:
         last_time = candles[-1]["time"]
-        if levels["entry"] is not None:
+        status = live_status(analysis)
+        if status in {"Breakout trigger", "In buy zone", "Near buy zone"}:
             markers.append(
                 {
                     "time": last_time,
                     "position": "belowBar",
                     "color": up,
                     "shape": "arrowUp",
-                    "text": f"Entry {money(levels['entry'])}",
+                    "text": "AI entry watch",
                 }
             )
-        if levels["target_1"] is not None:
+        elif status == "Below stop":
             markers.append(
                 {
                     "time": last_time,
                     "position": "aboveBar",
-                    "color": up,
-                    "shape": "arrowDown",
-                    "text": f"TP1 {money(levels['target_1'])}",
-                }
-            )
-        if levels["stop"] is not None:
-            markers.append(
-                {
-                    "time": last_time,
-                    "position": "belowBar",
                     "color": down,
                     "shape": "square",
-                    "text": f"Stop {money(levels['stop'])}",
+                    "text": f"Stop broken {money(levels['stop'])}",
                 }
             )
 
@@ -3444,6 +3911,7 @@ def lightweight_chart_payload(
         "priceLines": price_lines,
         "markers": markers,
         "visibleCount": int(visible_candles or min(len(candles), 390)),
+        "activeEndIndex": int(active_end_index),
         "palette": palette,
         "status": live_status(analysis),
     }
@@ -3460,21 +3928,29 @@ def render_lightweight_trading_chart(
     if not payload["candles"]:
         return False
 
-    chart_height = max(height + 360, 860)
+    chart_height = max(height + 190, 660)
+    chart_script = lightweight_charts_script()
+    chart_loader = (
+        f"<script>\n{chart_script}\n</script>"
+        if chart_script
+        else '<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>'
+    )
     component_html = """
 <div class="tw-shell">
   <div class="tw-toolbar">
     <div class="tw-brand">
       <strong>TradingView-style candles</strong>
       <span id="tw-status"></span>
+      <a class="tw-credit" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">Lightweight Charts by TradingView</a>
     </div>
     <div class="tw-buttons" aria-label="Chart zoom buttons">
       <span>Zoom</span>
+      <button data-range="30">30</button>
       <button data-range="45">45 candles</button>
       <button data-range="90">90</button>
       <button data-range="180">180</button>
-      <button data-range="390">390</button>
-      <button data-range="all">Fit all</button>
+      <button data-range="390">390 / day</button>
+      <button data-range="all">Context</button>
     </div>
   </div>
   <div class="tw-subbar">
@@ -3483,16 +3959,19 @@ def render_lightweight_trading_chart(
   </div>
   <div class="tw-stage">
     <div id="tw-chart" class="tw-chart"></div>
+    <canvas id="tw-wick-layer" class="tw-wick-layer" aria-hidden="true"></canvas>
     <div class="tw-watermark">__TICKER__</div>
   </div>
 </div>
-<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+__LIGHTWEIGHT_CHARTS_LOADER__
 <script>
 (() => {
   const payload = __PAYLOAD__;
   const palette = payload.palette;
   const shell = document.querySelector(".tw-shell");
   const container = document.getElementById("tw-chart");
+  const wickCanvas = document.getElementById("tw-wick-layer");
+  const wickContext = wickCanvas.getContext("2d");
   const legend = document.getElementById("tw-legend");
   const status = document.getElementById("tw-status");
   const fmt = (value) => Number.isFinite(Number(value)) ? "$" + Number(value).toFixed(2) : "n/a";
@@ -3533,16 +4012,18 @@ def render_lightweight_trading_chart(
     },
     rightPriceScale: {
       borderColor: palette.border,
-      scaleMargins: { top: 0.06, bottom: 0.18 },
-      entireTextOnly: true
+      scaleMargins: { top: 0.08, bottom: 0.14 },
+      entireTextOnly: true,
+      ticksVisible: true,
+      minimumWidth: 78
     },
     timeScale: {
       borderColor: palette.border,
       timeVisible: true,
       secondsVisible: false,
       rightOffset: 12,
-      barSpacing: 16,
-      minBarSpacing: 7,
+      barSpacing: 18,
+      minBarSpacing: 8,
       fixLeftEdge: false,
       fixRightEdge: false,
       lockVisibleTimeRangeOnResize: true,
@@ -3569,31 +4050,55 @@ def render_lightweight_trading_chart(
     const width = Math.max(Math.floor(entry.contentRect.width), 320);
     const height = Math.max(Math.floor(entry.contentRect.height), 360);
     chart.applyOptions({ width, height });
+    requestAnimationFrame(drawWicks);
   });
   ro.observe(container);
 
   const candleSeries = chart.addCandlestickSeries({
     upColor: "#00C805",
     downColor: "#FF375F",
-    borderVisible: false,
+    borderVisible: true,
+    borderUpColor: "#00C805",
+    borderDownColor: "#FF375F",
     wickUpColor: "#00C805",
     wickDownColor: "#FF375F",
+    wickVisible: true,
     priceFormat: { type: "price", precision: 2, minMove: 0.01 },
     lastValueVisible: true,
     priceLineVisible: true,
     priceLineColor: palette.text,
     priceLineWidth: 1,
-    priceLineStyle: LightweightCharts.LineStyle.Dotted
+    priceLineStyle: LightweightCharts.LineStyle.Dotted,
+    autoscaleInfoProvider: (original) => {
+      const result = original();
+      if (!result || !result.priceRange) return result;
+      const minValue = Number(result.priceRange.minValue);
+      const maxValue = Number(result.priceRange.maxValue);
+      if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) return result;
+      const span = Math.max(maxValue - minValue, Math.max(Math.abs(maxValue) * 0.0025, 0.02));
+      return {
+        priceRange: {
+          minValue: minValue - span * 0.16,
+          maxValue: maxValue + span * 0.18
+        },
+        margins: {
+          above: 8,
+          below: 10
+        }
+      };
+    }
   });
   candleSeries.setData(payload.candles);
 
   const volumeSeries = chart.addHistogramSeries({
     priceFormat: { type: "volume" },
-    priceScaleId: "volume"
+    priceScaleId: "volume",
+    lastValueVisible: false,
+    priceLineVisible: false
   });
   volumeSeries.setData(payload.volume);
   chart.priceScale("volume").applyOptions({
-    scaleMargins: { top: 0.84, bottom: 0 },
+    scaleMargins: { top: 0.88, bottom: 0 },
     visible: false
   });
 
@@ -3627,6 +4132,81 @@ def render_lightweight_trading_chart(
     candleSeries.setMarkers(payload.markers);
   }
 
+  const resizeWickCanvas = () => {
+    const rect = container.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    const width = Math.max(Math.floor(rect.width), 320);
+    const height = Math.max(Math.floor(rect.height), 360);
+    wickCanvas.style.width = width + "px";
+    wickCanvas.style.height = height + "px";
+    if (wickCanvas.width !== Math.floor(width * ratio) || wickCanvas.height !== Math.floor(height * ratio)) {
+      wickCanvas.width = Math.floor(width * ratio);
+      wickCanvas.height = Math.floor(height * ratio);
+    }
+    wickContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+    return { width, height };
+  };
+
+  const visibleSpacing = (size) => {
+    const range = chart.timeScale().getVisibleLogicalRange();
+    const count = range ? Math.max(range.to - range.from, 1) : Math.max(payload.visibleCount || 90, 1);
+    return Math.max(size.width / count, 2);
+  };
+
+  const drawSegment = (x, y1, y2, color, width) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y1) || !Number.isFinite(y2)) return;
+    wickContext.strokeStyle = color;
+    wickContext.lineWidth = width;
+    wickContext.lineCap = "round";
+    wickContext.beginPath();
+    wickContext.moveTo(Math.round(x) + 0.5, y1);
+    wickContext.lineTo(Math.round(x) + 0.5, y2);
+    wickContext.stroke();
+  };
+
+  const drawSmallBody = (x, y, color, spacing) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const half = Math.max(3, Math.min(10, spacing * 0.42));
+    wickContext.strokeStyle = color;
+    wickContext.lineWidth = Math.max(2.4, Math.min(4, spacing * 0.20));
+    wickContext.lineCap = "round";
+    wickContext.beginPath();
+    wickContext.moveTo(x - half, y);
+    wickContext.lineTo(x + half, y);
+    wickContext.stroke();
+  };
+
+  const drawWicks = () => {
+    if (!wickContext || !payload.candles.length) return;
+    const size = resizeWickCanvas();
+    wickContext.clearRect(0, 0, size.width, size.height);
+    const spacing = visibleSpacing(size);
+    const wickWidth = spacing >= 18 ? 2.8 : spacing >= 10 ? 2.2 : spacing >= 6 ? 1.65 : 1.25;
+    wickContext.shadowColor = "rgba(0, 0, 0, 0.18)";
+    wickContext.shadowBlur = 1.5;
+    const range = chart.timeScale().getVisibleLogicalRange();
+    const from = Math.max(0, Math.floor((range ? range.from : 0) - 8));
+    const to = Math.min(payload.candles.length - 1, Math.ceil((range ? range.to : payload.candles.length - 1) + 8));
+    for (let index = from; index <= to; index += 1) {
+      const bar = payload.candles[index];
+      if (!bar) continue;
+      const x = chart.timeScale().timeToCoordinate(bar.time);
+      const yHigh = candleSeries.priceToCoordinate(bar.high);
+      const yLow = candleSeries.priceToCoordinate(bar.low);
+      const yBodyTop = candleSeries.priceToCoordinate(Math.max(bar.open, bar.close));
+      const yBodyBottom = candleSeries.priceToCoordinate(Math.min(bar.open, bar.close));
+      const color = bar.close >= bar.open ? "#00C805" : "#FF375F";
+      drawSegment(x, yHigh, yBodyTop, color, wickWidth);
+      drawSegment(x, yBodyBottom, yLow, color, wickWidth);
+      if (Number.isFinite(yBodyTop) && Number.isFinite(yBodyBottom) && Math.abs(yBodyTop - yBodyBottom) < 2.4) {
+        drawSmallBody(x, yBodyTop, color, spacing);
+      }
+    }
+    wickContext.shadowBlur = 0;
+  };
+
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(drawWicks));
+
   const lastBar = payload.candles[payload.candles.length - 1];
   const updateLegend = (bar, time) => {
     if (!bar) return;
@@ -3655,20 +4235,36 @@ def render_lightweight_trading_chart(
   const setRange = (range) => {
     if (range === "all") {
       chart.timeScale().fitContent();
+      chart.timeScale().applyOptions({ barSpacing: 8, minBarSpacing: 5 });
+      markActive("all");
+      requestAnimationFrame(drawWicks);
       return;
     }
     const count = Math.max(Number(range) || 90, 10);
-    const end = payload.candles.length + 8;
-    const start = Math.max(payload.candles.length - count, 0);
+    const spacing = count <= 30 ? 24 : count <= 45 ? 20 : count <= 90 ? 16 : count <= 180 ? 12 : 9;
+    chart.timeScale().applyOptions({ barSpacing: spacing, minBarSpacing: 8 });
+    const anchor = Math.min(Math.max(Number(payload.activeEndIndex ?? payload.candles.length - 1), 0), payload.candles.length - 1);
+    const end = anchor + 8;
+    const start = Math.max(anchor - count + 1, 0);
     chart.timeScale().setVisibleLogicalRange({ from: start, to: end });
+    markActive(String(range));
+    requestAnimationFrame(drawWicks);
   };
 
-  document.querySelectorAll(".tw-buttons button").forEach((button) => {
+  const rangeButtons = Array.from(document.querySelectorAll(".tw-buttons button"));
+  const markActive = (range) => {
+    rangeButtons.forEach((button) => button.classList.toggle("active", button.dataset.range === String(range)));
+  };
+  rangeButtons.forEach((button) => {
     button.addEventListener("click", () => setRange(button.dataset.range));
   });
+  container.addEventListener("dblclick", () => setRange(Math.min(payload.visibleCount || 90, payload.candles.length)));
 
   setRange(Math.min(payload.visibleCount || 90, payload.candles.length));
-  requestAnimationFrame(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight }));
+  requestAnimationFrame(() => {
+    chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+    drawWicks();
+  });
 })();
 </script>
 <style>
@@ -3719,6 +4315,16 @@ def render_lightweight_trading_chart(
     color: __MUTED__;
     font-size: 12px;
   }
+  .tw-credit {
+    color: __MUTED__;
+    font-size: 11px;
+    text-decoration: none;
+    border-left: 1px solid __BORDER__;
+    padding-left: 8px;
+  }
+  .tw-credit:hover {
+    color: __BLUE__;
+  }
   .tw-buttons {
     display: flex;
     align-items: center;
@@ -3743,6 +4349,11 @@ def render_lightweight_trading_chart(
   .tw-buttons button:hover {
     border-color: __BLUE__;
     color: __BLUE__;
+  }
+  .tw-buttons button.active {
+    border-color: __UP__;
+    background: rgba(0, 200, 5, 0.10);
+    color: __UP__;
   }
   .tw-legend {
     min-height: 30px;
@@ -3784,6 +4395,16 @@ def render_lightweight_trading_chart(
   .tw-chart {
     height: 100%;
     background: __PANEL__;
+    position: relative;
+    z-index: 1;
+  }
+  .tw-wick-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
   }
   .tw-watermark {
     position: absolute;
@@ -3796,6 +4417,7 @@ def render_lightweight_trading_chart(
     pointer-events: none;
     user-select: none;
     letter-spacing: 0;
+    z-index: 0;
   }
   .tw-chart canvas {
     image-rendering: auto;
@@ -3824,6 +4446,7 @@ def render_lightweight_trading_chart(
 """
     replacements = {
         "__PAYLOAD__": json.dumps(payload),
+        "__LIGHTWEIGHT_CHARTS_LOADER__": chart_loader,
         "__CHART_HEIGHT__": str(chart_height),
         "__TICKER__": html.escape(str(payload["ticker"])),
         "__PANEL__": payload["palette"]["panel"],
@@ -4165,7 +4788,23 @@ def render_candlestick_chart(
         st.info("No chart data available for this stock.")
         return
 
-    if max_candles:
+    chart_engine = st.session_state.get("chart_engine", "TradingView-style")
+    if chart_engine == "TradingView-style":
+        visible_count = max_candles or min(len(history), 390)
+        load_limit = max(int(visible_count), 2600)
+        chart_df = history.tail(load_limit).copy()
+        flat_zero_volume = (
+            (chart_df["Volume"].fillna(0).astype(float) <= 0)
+            & ((chart_df["High"].astype(float) - chart_df["Low"].astype(float)).abs() <= 0.001)
+            & ((chart_df["Open"].astype(float) - chart_df["Close"].astype(float)).abs() <= 0.001)
+        )
+        cleaned_chart_df = chart_df.loc[~flat_zero_volume].copy()
+        if len(cleaned_chart_df) >= max(20, min(int(visible_count), 90)):
+            chart_df = cleaned_chart_df
+        active_volume_df = chart_df.loc[chart_df["Volume"].fillna(0).astype(float) > 0].copy()
+        if len(active_volume_df) >= max(20, min(int(visible_count), 90)):
+            chart_df = active_volume_df
+    elif max_candles:
         chart_df = history.tail(max_candles).copy()
     else:
         chart_df = history.tail(900).copy()
@@ -4191,8 +4830,8 @@ def render_candlestick_chart(
     def render_chart_stats() -> None:
         stats = [
             ("Last candle", money(current_price), pct(candle_delta), "up" if candle_delta >= 0 else "down"),
-            ("Range high", money(range_high), f"{len(chart_df):,} candles", "neutral"),
-            ("Range low", money(range_low), "visible range", "neutral"),
+            ("Loaded high", money(range_high), f"{len(chart_df):,} candles", "neutral"),
+            ("Loaded low", money(range_low), "drag left to review", "neutral"),
             ("VWAP", money(latest_vwap), "intraday control line", "neutral"),
         ]
         parts = ['<div class="msa-chart-stat-strip">']
@@ -4213,8 +4852,6 @@ def render_candlestick_chart(
         st.markdown("".join(parts), unsafe_allow_html=True)
 
     candle_size = 16 if len(chart_df) <= 90 else 12 if len(chart_df) <= 180 else 8 if len(chart_df) <= 390 else 4
-    chart_engine = st.session_state.get("chart_engine", "TradingView-style")
-
     if chart_engine == "TradingView-style":
         rendered = render_lightweight_trading_chart(chart_df, analysis, current_price, height, max_candles)
         if rendered:
@@ -4374,13 +5011,13 @@ def render_chart_panel(
     render_candlestick_chart(history, analysis, max_candles=max_candles)
     st.caption(
         f"Chart source: {source}. Last screen refresh: {datetime.now().strftime('%I:%M:%S %p')}. "
-        "Free Yahoo data can be real-time or delayed depending on exchange and availability."
+        "Free market data can be real-time or delayed depending on source, exchange, and availability."
     )
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
     render_trade_readiness_panel(analysis)
     render_premium_trade_ticket(analysis)
-    render_ai_decision_panel(analysis)
+    render_ai_decision_panel(analysis, source)
     render_ai_chart_trade_map(analysis)
     render_plan_card(analysis)
     with st.expander(f":material/article: Latest {ticker.upper()} news", expanded=True):
@@ -4544,10 +5181,11 @@ def render_live_tracker_body(tickers: tuple[str, ...], include_scan: bool, fragm
         ]
     )
     render_action_queue(df, key="live_tracker_action_queue")
+    render_data_health_summary(df)
 
     st.caption(
         f"Auto-refresh target: every {LIVE_REFRESH_SECONDS} seconds. "
-        f"Last refresh: {datetime.now().strftime('%I:%M:%S %p')}. Free Yahoo data may be delayed or rate-limited."
+        f"Last refresh: {datetime.now().strftime('%I:%M:%S %p')}. Free market data may be delayed or rate-limited."
     )
     show_tracker_table(df)
 
@@ -4564,7 +5202,7 @@ def page_live_tracker() -> None:
     include_scan = cols[0].toggle("Include live scanner", value=True, key="tracker_include_scan")
     auto_refresh = cols[1].toggle("Auto-refresh", value=True, key="tracker_auto_refresh")
     cols[2].caption(
-        f"Free mode uses Yahoo Finance with a {LIVE_REFRESH_SECONDS}-second refresh target. "
+        f"Free mode uses Alpaca IEX, Finnhub, and Yahoo-style fallbacks with a {LIVE_REFRESH_SECONDS}-second refresh target. "
         "It can be delayed or rate-limited, but it is enough for paper-trading practice."
     )
 
@@ -4615,6 +5253,7 @@ def page_dashboard() -> None:
         render_trade_readiness_panel(best)
         render_plan_card(best)
     with right_col:
+        render_data_health_summary(df)
         with st.container(border=True):
             st.markdown("**Market clocks**")
             st.dataframe(market_clock_frame(), width="stretch", hide_index=True)
@@ -4638,7 +5277,7 @@ def page_dashboard() -> None:
 
 def page_daily_gameplan() -> None:
     header("Daily Gameplan", "Your default scan: $2 to $20, gain over 10%, float under 10M, RVOL over 3x.")
-    prefer_live = st.toggle("Use live Yahoo data", value=True, key="gameplan_live")
+    prefer_live = st.toggle("Use live data", value=True, key="gameplan_live")
     df = default_scan(prefer_live=prefer_live)
     best = df.iloc[0].to_dict()
 
@@ -4651,6 +5290,7 @@ def page_daily_gameplan() -> None:
         ]
     )
     render_action_queue(df, key="gameplan_action_queue")
+    render_data_health_summary(df)
 
     st.subheader("Primary watch")
     render_ai_decision_panel(best)
@@ -4676,7 +5316,7 @@ def page_scanner() -> None:
         max_float = cols[3].number_input("Max float M", 0.1, 500.0, DEFAULT_RULES["max_float_m"], step=1.0)
         min_rvol = cols[4].number_input("Min RVOL", 0.1, 100.0, DEFAULT_RULES["min_rvol"], step=0.5)
         options = st.columns([1, 1, 3])
-        prefer_live = options[0].toggle("Use live Yahoo", value=True)
+        prefer_live = options[0].toggle("Use live data", value=True)
         include_learning = options[1].toggle("Fallback rows", value=True)
         submitted = st.form_submit_button("Run scan", type="primary")
 
@@ -4703,6 +5343,7 @@ def page_scanner() -> None:
             ]
         )
         render_action_queue(df, key="scanner_action_queue")
+        render_data_health_summary(df)
     show_scan_table(df, key="scanner_results_table")
 
 
@@ -4810,6 +5451,7 @@ def page_market_scan() -> None:
         ]
     )
     render_action_queue(df, key="market_scan_action_queue")
+    render_data_health_summary(df)
 
     show_broad_market_table(df)
 
@@ -4849,7 +5491,7 @@ def page_charts() -> None:
         period = control_top[3].segmented_control(
             "Chart range",
             period_options,
-            default=period_options[0],
+            default="5d" if interval == "1m" and "5d" in period_options else period_options[0],
             key=f"chart_period_{interval}",
         )
         period = str(period or period_options[0])
@@ -4862,7 +5504,7 @@ def page_charts() -> None:
             "All": None,
         }
         control_bottom = st.columns([1.75, 1.85, 0.62, 0.72, 0.62, 0.62, 0.68], vertical_alignment="bottom")
-        default_window = "45" if interval == "1m" else "180"
+        default_window = "90" if interval == "1m" else "180"
         window_label = control_bottom[0].segmented_control(
             "Visible candles",
             list(candle_windows),
@@ -4886,7 +5528,7 @@ def page_charts() -> None:
         provisional_prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
         st.caption(
             f"Wheel zoom, drag pan, double-click reset. Data mode: {'live intraday' if provisional_prefer_live else 'learning'}. "
-            "1-minute candles start tight at 45 candles; use 90/180/390/Fit all inside the chart to inspect more."
+            "1-minute charts load multiple days when available; use 45/90/180/390 for readable candle width, then drag left to review older candles."
         )
 
     st.session_state.chart_layer_ema9 = bool(st.session_state.get("chart_layer_emas", True))
@@ -4910,13 +5552,13 @@ def page_ai_coach() -> None:
     cols = st.columns([1, 1, 2])
     ticker = normalize_user_symbol(cols[0].text_input("Stock", value=st.session_state.get("selected_ticker", "SOUN")))
     period = cols[1].selectbox("Lookback", ["1mo", "3mo", "6mo", "1y"], index=1)
-    prefer_live = cols[2].toggle("Use live Yahoo data", value=True, key="ai_live")
+    prefer_live = cols[2].toggle("Use live data", value=True, key="ai_live")
 
     history, source = load_history(ticker, period=period, interval="1d", prefer_live=prefer_live)
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=prefer_live)
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
-    render_ai_decision_panel(analysis)
+    render_ai_decision_panel(analysis, source)
     render_plan_card(analysis)
     with st.expander(f":material/article: News catalyst for {analysis.get('Ticker', ticker)}", expanded=True):
         render_news_items(finnhub_company_news(str(analysis.get("Ticker", ticker)), days=5, limit=5))
@@ -4933,7 +5575,7 @@ def page_ai_coach() -> None:
 def page_watchlist() -> None:
     header("Watchlist", "Keep the names you and your friends are studying.")
     watchlist = read_watchlist()
-    prefer_live = st.toggle("Use live Yahoo data", value=True, key="watchlist_live")
+    prefer_live = st.toggle("Use live data", value=True, key="watchlist_live")
 
     with st.form("add_watchlist"):
         cols = st.columns([1, 3])
@@ -5083,7 +5725,7 @@ def page_backtester() -> None:
         min_gap = cols[2].number_input("Min gap %", 1.0, 50.0, 10.0, step=1.0)
         min_rvol = cols[3].number_input("Min RVOL", 0.5, 20.0, 3.0, step=0.5)
         hold_days = cols[4].number_input("Hold days", 1, 10, 3, step=1)
-        prefer_live = st.toggle("Use live Yahoo data", value=True, key="backtest_live")
+        prefer_live = st.toggle("Use live data", value=True, key="backtest_live")
         run = st.form_submit_button("Run backtest", type="primary")
 
     if run or "backtest_result" not in st.session_state:
