@@ -2772,6 +2772,89 @@ def apply_style(mode: str | None = None) -> None:
             line-height: 1.25;
             margin-top: 6px;
         }}
+        .msa-plan-ladder {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 10px;
+            margin: 10px 0 14px 0;
+        }}
+        .msa-plan-step {{
+            position: relative;
+            min-height: 148px;
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            box-shadow: 0 14px 30px var(--msa-shadow);
+            padding: 13px 13px 12px 13px;
+            overflow: hidden;
+        }}
+        .msa-plan-step:before {{
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 4px;
+            background: var(--msa-muted-soft);
+        }}
+        .msa-plan-ready:before {{background: var(--msa-up);}}
+        .msa-plan-watch:before {{background: var(--msa-orange);}}
+        .msa-plan-danger:before {{background: var(--msa-down);}}
+        .msa-plan-neutral:before {{background: var(--msa-blue);}}
+        .msa-plan-top {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }}
+        .msa-plan-number {{
+            display: grid;
+            place-items: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            background: var(--msa-panel);
+            border: 1px solid var(--msa-border);
+            color: var(--msa-muted-soft);
+            font-size: .8rem;
+            font-weight: 820;
+        }}
+        .msa-plan-state {{
+            color: var(--msa-muted-soft);
+            font-size: .7rem;
+            font-weight: 780;
+            text-transform: uppercase;
+        }}
+        .msa-plan-title {{
+            color: var(--msa-text);
+            font-size: 1.05rem;
+            font-weight: 840;
+            line-height: 1.08;
+            margin-top: 10px;
+        }}
+        .msa-plan-value {{
+            color: var(--msa-text);
+            font-size: clamp(1.35rem, 2.2vw, 1.82rem);
+            font-weight: 870;
+            line-height: 1.05;
+            margin-top: 6px;
+        }}
+        .msa-plan-ready .msa-plan-value {{color: var(--msa-up);}}
+        .msa-plan-danger .msa-plan-value {{color: var(--msa-down);}}
+        .msa-plan-watch .msa-plan-value {{color: var(--msa-orange);}}
+        .msa-plan-detail {{
+            color: var(--msa-muted);
+            font-size: .8rem;
+            line-height: 1.28;
+            margin-top: 7px;
+        }}
+        .msa-plan-rule {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            padding: 10px 12px;
+            margin: 0 0 14px 0;
+            line-height: 1.35;
+        }}
         .msa-ai-list {{
             border: 1px solid var(--msa-border);
             border-radius: 8px;
@@ -3110,6 +3193,122 @@ def beginner_trade_translation(analysis: dict[str, Any], label: str) -> str:
     return f"Plain English: this is a watchlist idea. The app is telling you to wait for {entry}, know the stop at {stop}, and check that {target} pays enough reward."
 
 
+def ai_plan_ladder_items(analysis: dict[str, Any], chart_source: str | None = None) -> tuple[list[dict[str, str]], str]:
+    label, _ = ai_action_summary(analysis)
+    status = live_status(analysis)
+    math_data = ai_trade_math(analysis)
+    confidence = data_confidence_summary(analysis, chart_source)
+    passed, total = setup_completion(analysis)
+    entry = math_data["entry"]
+    stop = math_data["stop"]
+    target_1 = math_data["target_1"]
+    target_2 = math_data["target_2"]
+    rr_1 = math_data["rr_1"]
+    distance = math_data["distance"]
+
+    source_tone = "ready" if confidence["score"] >= 65 else "watch" if confidence["score"] >= 45 else "danger"
+    setup_tone = "ready" if passed >= max(total - 1, 1) else "watch" if passed >= max(total - 3, 1) else "danger"
+    entry_tone = "ready" if status == "Breakout trigger" else "watch" if status in {"In buy zone", "Near buy zone", "Momentum active"} else "danger" if status == "Below stop" else "neutral"
+    stop_tone = "danger" if status == "Below stop" else "ready" if stop is not None and entry is not None and stop < entry else "watch"
+    target_tone = "ready" if rr_1 is not None and rr_1 >= 1.4 else "watch"
+
+    if status == "Breakout trigger":
+        entry_detail = "Trigger is active. Confirm candle strength, spread, volume, and news before any paper approval."
+        entry_value = money(entry)
+        entry_state = "trigger"
+    elif status == "In buy zone":
+        entry_detail = f"In the buy area, but beginners still wait for confirmation over {money(entry)}."
+        entry_value = "Wait"
+        entry_state = "confirm"
+    elif status == "Near buy zone":
+        entry_detail = f"Close to the planned area. Distance to trigger is {pct(distance) if distance is not None else 'n/a'}."
+        entry_value = money(entry)
+        entry_state = "watch"
+    elif status == "Below stop":
+        entry_detail = "The current plan is broken. Do not use this entry until a new setup forms."
+        entry_value = "Skip"
+        entry_state = "invalid"
+    else:
+        entry_detail = f"Keep it on watch and wait for price to confirm near {money(entry)}."
+        entry_value = money(entry)
+        entry_state = "wait"
+
+    rr_text = f"{rr_1:.2f}R" if rr_1 is not None else "n/a"
+    source_detail = f"{confidence['label']} ({confidence['score']}/100). Quote age: {confidence['age']}."
+    target_detail = f"First trim is {money(target_1)} and runner is {money(target_2)}. Target 1 reward/risk: {rr_text}."
+    rule = "Read it in order: verify the data, judge the setup, wait for the trigger, respect the stop, then measure whether the profit target pays enough for the risk."
+    if label == "Trigger active" and confidence["score"] >= 65:
+        rule = "This is the closest thing to an active paper-trade review: the trigger matters now, but approval still needs news, spread, volume, and risk checks."
+    elif status == "Below stop" or label == "Plan invalid":
+        rule = "The ladder says stand down: when the stop or invalidation area breaks, the old entry and targets no longer count."
+
+    items = [
+        {
+            "title": "1. Data check",
+            "state": str(confidence["label"]),
+            "value": f"{confidence['score']}/100",
+            "detail": source_detail,
+            "tone": source_tone,
+        },
+        {
+            "title": "2. Setup check",
+            "state": "rule fit",
+            "value": f"{passed}/{total}",
+            "detail": "Price, gap, float, RVOL, trend, risk, and action status are checked before the AI helper gets excited.",
+            "tone": setup_tone,
+        },
+        {
+            "title": "3. Entry trigger",
+            "state": entry_state,
+            "value": entry_value,
+            "detail": entry_detail,
+            "tone": entry_tone,
+        },
+        {
+            "title": "4. Stop loss",
+            "state": "risk line",
+            "value": money(stop),
+            "detail": "If price loses this area, the paper setup is wrong. Do not average down into a broken plan.",
+            "tone": stop_tone,
+        },
+        {
+            "title": "5. Take profit",
+            "state": "reward",
+            "value": money(target_1),
+            "detail": target_detail,
+            "tone": target_tone,
+        },
+    ]
+    return items, rule
+
+
+def render_ai_plan_ladder(analysis: dict[str, Any], chart_source: str | None = None) -> None:
+    items, rule = ai_plan_ladder_items(analysis, chart_source)
+    parts = ['<div class="msa-plan-ladder">']
+    for index, item in enumerate(items, start=1):
+        parts.append(
+            '<div class="msa-plan-step msa-plan-{tone}">'
+            '<div class="msa-plan-top"><div class="msa-plan-number">{index}</div><div class="msa-plan-state">{state}</div></div>'
+            '<div class="msa-plan-title">{title}</div>'
+            '<div class="msa-plan-value">{value}</div>'
+            '<div class="msa-plan-detail">{detail}</div>'
+            '</div>'.format(
+                tone=html.escape(item["tone"]),
+                index=index,
+                state=html.escape(item["state"]),
+                title=html.escape(item["title"]),
+                value=html.escape(item["value"]),
+                detail=html.escape(item["detail"]),
+            )
+        )
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
+    st.markdown(
+        '<div class="msa-plan-rule"><b>Beginner rule:</b> {rule}</div>'.format(rule=html.escape(rule)),
+        unsafe_allow_html=True,
+    )
+
+
 def render_html_list(title: str, items: list[str]) -> str:
     parts = [f"<strong>{html.escape(title)}</strong><ul>"]
     for item in items:
@@ -3185,6 +3384,8 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
             ),
             unsafe_allow_html=True,
         )
+
+        render_ai_plan_ladder(analysis, chart_source)
 
         now_items = ai_now_steps(analysis, label, status)
         cancel_items = ai_cancel_rules(analysis)
@@ -6121,6 +6322,7 @@ def page_learn() -> None:
         "Routine",
         "Chart reading",
         "Risk",
+        "AI ladder",
         "Data sources",
         "News",
         "Flashcards",
@@ -6187,6 +6389,7 @@ def page_learn() -> None:
                     {"Field": "Price audit", "What it means": "The app checks source, time, and whether price feeds disagree.", "Beginner move": "If it says mismatch or fallback, use the stock for study only."},
                     {"Field": "Data confidence", "What it means": "A quick trust label based on source, quote age, fallback data, and feed agreement.", "Beginner move": "High confidence is cleaner for paper practice. Verify first means slow down and check another source."},
                     {"Field": "AI score", "What it means": "A checklist score based on the app's rules.", "Beginner move": "Use it to focus your study, not as a profit promise."},
+                    {"Field": "AI ladder", "What it means": "A step-by-step read of data, setup, entry, stop, and take-profit levels.", "Beginner move": "Read the ladder in order before staging any paper order."},
                     {"Field": "Entry trigger", "What it means": "The confirmation price.", "Beginner move": "Avoid guessing early. Wait for confirmation on the chart."},
                     {"Field": "Stop loss", "What it means": "Where the idea is wrong.", "Beginner move": "If this loss feels too big, reduce paper size or skip."},
                     {"Field": "Take profit", "What it means": "A planned exit where reward starts to pay for risk.", "Beginner move": "Know the reward before the entry."},
@@ -6431,6 +6634,42 @@ def page_learn() -> None:
             st.write("- One planned loss is tuition. A chased loss is a habit problem.")
             st.write("- If the setup breaks the stop, the idea is invalid.")
             st.write("- If you miss the entry, wait for the next clean setup.")
+
+    elif track == "AI ladder":
+        st.info(
+            "The AI ladder is the easiest way to slow down before a paper order. Read every step in order.",
+            icon=":material/stairs:",
+        )
+        sample_analysis = analyze_ticker("SOUN", prefer_live=False)
+        render_ai_plan_ladder(sample_analysis, str(sample_analysis.get("Data source", "Learning")))
+
+        ladder_cards = [
+            ("1. Data check", "Ask: can I trust this price enough for paper practice?", "If it says Verify first or Practice data, slow down and compare another source."),
+            ("2. Setup check", "Ask: do the scanner rules actually line up?", "Price, gap, float, RVOL, trend, risk, and action status should mostly agree."),
+            ("3. Entry trigger", "Ask: what exact price proves buyers are showing up?", "Do not buy early just because the stock is moving."),
+            ("4. Stop loss", "Ask: where is the idea wrong?", "If the stop feels too far away, reduce size or skip."),
+            ("5. Take profit", "Ask: does the reward pay enough for the risk?", "Target 1 should usually offer at least about 1.5R for this practice style."),
+        ]
+        top_cards = st.columns(3)
+        bottom_cards = st.columns(2)
+        for col, (title, question, rule_text) in zip(list(top_cards) + list(bottom_cards), ladder_cards):
+            with col:
+                with st.container(border=True, height="stretch"):
+                    st.markdown(f"**{title}**")
+                    st.write(question)
+                    st.caption(rule_text)
+
+        with st.container(border=True):
+            st.markdown("**How to use it on Charts or Trade Desk**")
+            st.write("1. If Data check is weak, treat the stock as study only until another source agrees.")
+            st.write("2. If Setup check is weak, do not force a trade just because one candle looks strong.")
+            st.write("3. If Entry trigger says Wait, do not approve a paper order yet.")
+            st.write("4. If Stop loss says invalid or price is below the stop, rebuild the plan from fresh candles.")
+            st.write("5. If Take profit does not pay enough reward, skip or wait for a cleaner setup.")
+
+        with st.container(border=True):
+            st.markdown("**Beginner translation**")
+            st.write("The ladder is not telling you to buy. It is telling you what must be true before a paper trade idea is even worth reviewing.")
 
     elif track == "Data sources":
         render_data_stack_panel(compact=False)
@@ -6677,6 +6916,9 @@ def page_learn() -> None:
                 {"Term": "SIP feed", "Meaning": "A consolidated exchange data feed across major US markets.", "Why it matters": "It is closer to full professional real-time data, but it usually costs money because exchanges charge fees."},
                 {"Term": "Delayed quote", "Meaning": "A price that may be behind the current market.", "Why it matters": "A delayed quote can make entries, stops, and targets look safer than they really are."},
                 {"Term": "Data confidence", "Meaning": "The app's trust label based on source, quote age, fallback data, and price mismatch risk.", "Why it matters": "It tells beginners when to slow down and verify before using a setup."},
+                {"Term": "AI ladder", "Meaning": "The app's step-by-step paper-trade review: data, setup, entry, stop, and take profit.", "Why it matters": "It gives beginners an order to follow instead of reacting emotionally to candles."},
+                {"Term": "Setup check", "Meaning": "A quick count of how many scanner rules are lining up.", "Why it matters": "A strong candle is not enough if the full setup is weak."},
+                {"Term": "Data check", "Meaning": "The first ladder step that checks source, quote age, and confidence.", "Why it matters": "Bad or stale data can make a paper plan look cleaner than it really is."},
                 {"Term": "Premarket", "Meaning": "Trading before the regular market open.", "Why it matters": "Moves can be fast, spreads can be wide, and volume can be thinner."},
                 {"Term": "After-hours", "Meaning": "Trading after the regular market close.", "Why it matters": "News often drops after the bell, but fills can be less predictable."},
                 {"Term": "Gapper", "Meaning": "A stock opening or trading far above the prior close.", "Why it matters": "It can reveal fresh demand, but late entries can fade fast."},

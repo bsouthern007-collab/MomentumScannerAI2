@@ -60,6 +60,14 @@ The app shows a data stack panel and source brief so users can see whether Alpac
 /Learn?track=Data%20sources
 ```
 
+## Beginner AI ladder
+
+The AI assistant includes a five-step ladder for paper-trade review: data check, setup check, entry trigger, stop loss, and take profit. The Learn page includes a matching lesson at:
+
+```text
+/Learn?track=AI%20ladder
+```
+
 ## Quick local check
 
 ```text
