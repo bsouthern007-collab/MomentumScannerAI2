@@ -3097,6 +3097,55 @@ def stock_fact_sheet_frame(analysis: dict[str, Any], chart_source: str | None = 
     )
 
 
+def risk_math_frame(analysis: dict[str, Any], paper_risk: float = 25.0) -> pd.DataFrame:
+    levels = chart_trade_levels(analysis)
+    entry = levels["entry"]
+    stop = levels["stop"]
+    target_1 = levels["target_1"]
+    target_2 = levels["target_2"]
+    risk_per_share = (entry - stop) if entry is not None and stop is not None else None
+    reward_1 = (target_1 - entry) if target_1 is not None and entry is not None else None
+    reward_2 = (target_2 - entry) if target_2 is not None and entry is not None else None
+    rr_1 = (reward_1 / risk_per_share) if reward_1 is not None and risk_per_share and risk_per_share > 0 else None
+    rr_2 = (reward_2 / risk_per_share) if reward_2 is not None and risk_per_share and risk_per_share > 0 else None
+    shares = math.floor(paper_risk / risk_per_share) if risk_per_share and risk_per_share > 0 else None
+
+    return pd.DataFrame(
+        [
+            {
+                "Question": "What is the planned entry?",
+                "Answer": money(entry),
+                "Beginner meaning": "This is the confirmation price the practice plan waits for.",
+            },
+            {
+                "Question": "What is the planned stop?",
+                "Answer": money(stop),
+                "Beginner meaning": "This is where the idea is wrong.",
+            },
+            {
+                "Question": "Risk per share",
+                "Answer": money(risk_per_share),
+                "Beginner meaning": "Entry minus stop. This is the amount at risk on each paper share.",
+            },
+            {
+                "Question": "Reward to take profit 1",
+                "Answer": money(reward_1),
+                "Beginner meaning": f"About {rr_1:.2f}R if target 1 hits." if rr_1 is not None else "Needs valid entry, stop, and target.",
+            },
+            {
+                "Question": "Reward to runner target",
+                "Answer": money(reward_2),
+                "Beginner meaning": f"About {rr_2:.2f}R if the runner target hits." if rr_2 is not None else "Needs valid entry, stop, and target.",
+            },
+            {
+                "Question": f"Example with {money(paper_risk)} paper risk",
+                "Answer": f"{shares:,} shares" if shares else "n/a",
+                "Beginner meaning": "This is practice position-size math, not a real-trade recommendation.",
+            },
+        ]
+    )
+
+
 def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | None = None) -> None:
     ticker = str(analysis.get("Ticker", "Stock"))
     company = str(analysis.get("Company", ticker))
@@ -3167,6 +3216,10 @@ def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | 
             ]
         )
         st.dataframe(level_rows, width="stretch", hide_index=True)
+
+        with st.expander("Risk and reward math", expanded=False, icon=":material/calculate:"):
+            st.caption("Paper-trade math example. Always adjust risk yourself and never treat the example share size as financial advice.")
+            st.dataframe(risk_math_frame(analysis), width="stretch", hide_index=True)
 
         explain_cols = st.columns(2)
         with explain_cols[0]:
