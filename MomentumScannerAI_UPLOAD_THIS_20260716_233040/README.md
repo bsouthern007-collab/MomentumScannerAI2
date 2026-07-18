@@ -39,3 +39,11 @@ When those keys are present, the app tries Alpaca IEX candles for regular stocks
 ## Chart engine
 
 The premium candle chart uses TradingView Lightweight Charts from `assets/lightweight-charts.standalone.production.js`, with an online fallback if that local file is missing.
+
+## Data confidence
+
+The app shows a data stack panel and source brief so users can see whether Alpaca IEX, Finnhub, Yahoo fallback, or learning data is powering the current view. The Learn page includes a direct data-source lesson at:
+
+```text
+/Learn?track=Data%20sources
+```

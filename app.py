@@ -1990,6 +1990,105 @@ def render_data_health_summary(df: pd.DataFrame) -> None:
         cols[3].metric("Practice only", str(practice_total), f"{total} total rows", border=True)
 
 
+def provider_status_items() -> list[dict[str, str]]:
+    alpaca_ready = alpaca_enabled()
+    finnhub_ready = finnhub_enabled()
+    yahoo_ready = yf is not None
+    chart_ready = LIGHTWEIGHT_CHARTS_FILE.exists()
+    return [
+        {
+            "name": "Alpaca IEX",
+            "state": "Connected" if alpaca_ready else "Add paper keys",
+            "tone": "ready" if alpaca_ready else "watch",
+            "detail": "First choice for regular-stock intraday candles when keys are present. Free IEX feed can still be limited or delayed.",
+        },
+        {
+            "name": "Finnhub",
+            "state": "Connected" if finnhub_ready else "Add key",
+            "tone": "ready" if finnhub_ready else "watch",
+            "detail": "Used for quotes, company news, market news, and symbol lists. News quality depends on the free endpoint.",
+        },
+        {
+            "name": "Yahoo fallback",
+            "state": "Available" if yahoo_ready else "Package missing",
+            "tone": "info" if yahoo_ready else "watch",
+            "detail": "Backup candles, index symbols like S&P 500, and quote estimates when the primary free feeds cannot answer.",
+        },
+        {
+            "name": "TradingView chart",
+            "state": "Local asset" if chart_ready else "Online fallback",
+            "tone": "ready" if chart_ready else "watch",
+            "detail": "The app uses TradingView Lightweight Charts locally for smooth candles, zooming, volume, and level overlays.",
+        },
+    ]
+
+
+def provider_cards_html(items: list[dict[str, str]]) -> str:
+    parts = ['<div class="msa-provider-grid">']
+    for item in items:
+        parts.append(
+            '<div class="msa-provider-card msa-provider-{tone}">'
+            '<div class="msa-provider-name">{name}</div>'
+            '<div class="msa-provider-state">{state}</div>'
+            '<div class="msa-provider-detail">{detail}</div>'
+            '</div>'.format(
+                tone=html.escape(item["tone"]),
+                name=html.escape(item["name"]),
+                state=html.escape(item["state"]),
+                detail=html.escape(item["detail"]),
+            )
+        )
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def render_data_stack_panel(compact: bool = False) -> None:
+    items = provider_status_items()
+    connected = sum(1 for item in items if item["tone"] == "ready")
+    with st.container(border=True):
+        st.markdown("**Data stack**")
+        with st.container(horizontal=True):
+            st.badge(f"{connected}/{len(items)} ready", icon=":material/database:", color="green" if connected >= 3 else "orange")
+            st.badge("Free feeds", icon=":material/savings:", color="blue")
+            st.badge("Paper-trading only", icon=":material/edit_note:", color="blue")
+        if not compact:
+            st.markdown(provider_cards_html(items), unsafe_allow_html=True)
+        st.markdown(
+            '<div class="msa-source-flow">'
+            '<b>Source order:</b> regular-stock candles try Alpaca IEX first, then Yahoo-style chart fallback, then learning data. '
+            'Quotes and news use Finnhub when available. Indexes like S&P 500 use Yahoo-style symbols because Alpaca IEX is a stock feed.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def source_explanation(source: Any) -> str:
+    source_text = str(source or "Unknown")
+    lowered = source_text.lower()
+    if "alpaca" in lowered:
+        return "Alpaca IEX candle feed. Good free intraday source for regular stocks, but still verify fast moves and after-hours behavior."
+    if "finnhub" in lowered:
+        return "Finnhub quote/news feed. Useful for live context, catalysts, and scanner metadata."
+    if "yahoo" in lowered:
+        return "Yahoo-style fallback data. Helpful for indexes and backup candles, but free data can be delayed or rate-limited."
+    if "learning" in lowered:
+        return "Learning fallback data. Use it to study the app and practice the workflow, not as a live market quote."
+    return "Unknown source. Verify with another quote source before trusting the number."
+
+
+def render_source_brief(analysis: dict[str, Any], chart_source: str | None = None) -> None:
+    active_source = str(analysis.get("Data source", "n/a"))
+    chart_label = chart_source or active_source
+    confidence = data_confidence_summary(analysis, chart_source)
+    with st.container(border=True):
+        st.markdown("**Source brief**")
+        cols = st.columns(3)
+        cols[0].metric("Active price source", data_quality_badge(active_source)[0], active_source, border=True)
+        cols[1].metric("Chart source", data_quality_badge(chart_label)[0], str(chart_label), border=True)
+        cols[2].metric("Confidence", str(confidence["label"]), f"{confidence['score']}/100", border=True)
+        st.caption(source_explanation(chart_label))
+
+
 def market_clock_frame() -> pd.DataFrame:
     rows = []
     now_utc = pd.Timestamp.now(tz="UTC")
@@ -2358,6 +2457,60 @@ def apply_style(mode: str | None = None) -> None:
         .msa-hot {{border-left: 4px solid var(--msa-orange);}}
         .msa-calm {{border-left: 4px solid var(--msa-blue);}}
         .msa-danger {{border-left: 4px solid var(--msa-down);}}
+        .msa-provider-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 10px;
+            margin: 10px 0 8px 0;
+        }}
+        .msa-provider-card {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            padding: 12px 13px;
+            min-height: 126px;
+            box-shadow: 0 12px 28px var(--msa-shadow);
+        }}
+        .msa-provider-card:before {{
+            content: "";
+            display: block;
+            height: 4px;
+            width: 44px;
+            border-radius: 999px;
+            background: var(--msa-muted-soft);
+            margin-bottom: 10px;
+        }}
+        .msa-provider-ready:before {{background: var(--msa-up);}}
+        .msa-provider-watch:before {{background: var(--msa-orange);}}
+        .msa-provider-info:before {{background: var(--msa-blue);}}
+        .msa-provider-name {{
+            color: var(--msa-text);
+            font-weight: 820;
+            font-size: 1rem;
+            line-height: 1.1;
+        }}
+        .msa-provider-state {{
+            color: var(--msa-muted-soft);
+            font-size: .76rem;
+            font-weight: 760;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }}
+        .msa-provider-detail {{
+            color: var(--msa-muted);
+            font-size: .84rem;
+            line-height: 1.32;
+            margin-top: 7px;
+        }}
+        .msa-source-flow {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            padding: 10px 12px;
+            line-height: 1.35;
+            margin-top: 8px;
+        }}
         .msa-level-board {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -5013,6 +5166,7 @@ def render_chart_panel(
         f"Chart source: {source}. Last screen refresh: {datetime.now().strftime('%I:%M:%S %p')}. "
         "Free market data can be real-time or delayed depending on source, exchange, and availability."
     )
+    render_source_brief(analysis, source)
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
     render_trade_readiness_panel(analysis)
@@ -5134,7 +5288,7 @@ def live_tracker_frame(tickers: tuple[str, ...], include_scan: bool = True) -> p
 
 def show_tracker_table(df: pd.DataFrame) -> None:
     if df.empty:
-        st.info("No live rows returned yet. Yahoo may be rate-limiting or the current filters may be too tight.")
+        st.info("No live rows returned yet. Free data may be rate-limiting or the current filters may be too tight.")
         return
 
     st.dataframe(
@@ -5205,6 +5359,7 @@ def page_live_tracker() -> None:
         f"Free mode uses Alpaca IEX, Finnhub, and Yahoo-style fallbacks with a {LIVE_REFRESH_SECONDS}-second refresh target. "
         "It can be delayed or rate-limited, but it is enough for paper-trading practice."
     )
+    render_data_stack_panel(compact=True)
 
     if auto_refresh:
         auto_refresh_live_tracker(watchlist, include_scan)
@@ -5221,9 +5376,9 @@ def page_dashboard() -> None:
     control_cols = st.columns([1, 1, 2])
     prefer_live = control_cols[0].toggle("Use live data", value=True, key="dashboard_live")
     control_cols[1].badge(
-        "Finnhub connected" if finnhub_enabled() else "Finnhub not connected",
+        "Alpaca + Finnhub connected" if alpaca_enabled() and finnhub_enabled() else "Check data keys",
         icon=":material/key:",
-        color="green" if finnhub_enabled() else "orange",
+        color="green" if alpaca_enabled() and finnhub_enabled() else "orange",
     )
     control_cols[2].caption("Home base: scanner candidates, AI plan, market clocks, and the latest news.")
 
@@ -5253,6 +5408,7 @@ def page_dashboard() -> None:
         render_trade_readiness_panel(best)
         render_plan_card(best)
     with right_col:
+        render_data_stack_panel(compact=True)
         render_data_health_summary(df)
         with st.container(border=True):
             st.markdown("**Market clocks**")
@@ -5278,6 +5434,7 @@ def page_dashboard() -> None:
 def page_daily_gameplan() -> None:
     header("Daily Gameplan", "Your default scan: $2 to $20, gain over 10%, float under 10M, RVOL over 3x.")
     prefer_live = st.toggle("Use live data", value=True, key="gameplan_live")
+    render_data_stack_panel(compact=True)
     df = default_scan(prefer_live=prefer_live)
     best = df.iloc[0].to_dict()
 
@@ -5350,7 +5507,7 @@ def page_scanner() -> None:
 def page_market_scan() -> None:
     header("Market Scan", "Track core movers, S&P 500 names, global ETFs, crypto, and the full US stock universe in batches.")
 
-    st.badge("Finnhub connected" if finnhub_enabled() else "Finnhub key needed for news/quotes", icon=":material/key:", color="green" if finnhub_enabled() else "orange")
+    render_data_stack_panel(compact=True)
 
     clock_df = market_clock_frame()
     with st.container(border=True):
@@ -5530,6 +5687,7 @@ def page_charts() -> None:
             f"Wheel zoom, drag pan, double-click reset. Data mode: {'live intraday' if provisional_prefer_live else 'learning'}. "
             "1-minute charts load multiple days when available; use 45/90/180/390 for readable candle width, then drag left to review older candles."
         )
+    render_data_stack_panel(compact=True)
 
     st.session_state.chart_layer_ema9 = bool(st.session_state.get("chart_layer_emas", True))
     st.session_state.chart_layer_ema20 = bool(st.session_state.get("chart_layer_emas", True))
@@ -5556,6 +5714,7 @@ def page_ai_coach() -> None:
 
     history, source = load_history(ticker, period=period, interval="1d", prefer_live=prefer_live)
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=prefer_live)
+    render_source_brief(analysis, source)
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
     render_ai_decision_panel(analysis, source)
@@ -5625,6 +5784,7 @@ def page_watchlist() -> None:
 
 def page_trade_desk() -> None:
     header("Trade Desk", "Stage AI trade plans, approve them manually, and record paper orders.")
+    render_data_stack_panel(compact=True)
     st.warning(
         "This page records approved paper orders only. Real broker execution needs a separate broker connection and another explicit approval step.",
         icon=":material/warning:",
@@ -5638,9 +5798,10 @@ def page_trade_desk() -> None:
 
     history, source = load_history(ticker, period=period, interval=interval, prefer_live=True)
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=True)
+    render_source_brief(analysis, source)
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
-    render_ai_decision_panel(analysis)
+    render_ai_decision_panel(analysis, source)
 
     order = stage_order_from_analysis(analysis, risk_dollars=risk_dollars)
     with st.container(border=True):
@@ -5763,24 +5924,28 @@ def page_backtester() -> None:
 def page_learn() -> None:
     header("Learn", "A practical day-trading study guide for the scanner, charts, news, risk, and journaling.")
 
+    track_options = [
+        "Start here",
+        "Place a paper trade",
+        "Order ticket",
+        "Playbook",
+        "Routine",
+        "Chart reading",
+        "Risk",
+        "Data sources",
+        "News",
+        "Flashcards",
+        "Quiz",
+        "Practice",
+        "Glossary",
+        "iPad",
+    ]
+    requested_track = str(st.query_params.get("track", "") or "").replace("_", " ").strip()
+    requested_match = next((option for option in track_options if option.lower() == requested_track.lower()), "Start here")
     track = st.selectbox(
         "Learning track",
-        [
-            "Start here",
-            "Place a paper trade",
-            "Order ticket",
-            "Playbook",
-            "Routine",
-            "Chart reading",
-            "Risk",
-            "News",
-            "Flashcards",
-            "Quiz",
-            "Practice",
-            "Glossary",
-            "iPad",
-        ],
-        index=0,
+        track_options,
+        index=track_options.index(requested_match),
         width="stretch",
     )
     track = track or "Start here"
@@ -6078,6 +6243,35 @@ def page_learn() -> None:
             st.write("- If the setup breaks the stop, the idea is invalid.")
             st.write("- If you miss the entry, wait for the next clean setup.")
 
+    elif track == "Data sources":
+        render_data_stack_panel(compact=False)
+        cols = st.columns(3)
+        with cols[0]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**What live means**")
+                st.write("- Live data can still be exchange-limited, delayed, or missing for some symbols.")
+                st.write("- The app shows source and confidence so you know when to slow down.")
+                st.write("- Free feeds are good for learning and paper-trading practice, not perfect execution truth.")
+        with cols[1]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**How to read confidence**")
+                st.write("- High confidence: source and time look cleaner.")
+                st.write("- Usable for paper: acceptable for practice, still verify.")
+                st.write("- Verify first: check another source before trusting the idea.")
+                st.write("- Practice data: learning fallback, not live market data.")
+        with cols[2]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**When to double-check**")
+                st.write("- Price is moving very fast.")
+                st.write("- The chart and quote differ.")
+                st.write("- The spread is wide.")
+                st.write("- News dropped in premarket or after-hours.")
+                st.write("- You are about to approve a paper order.")
+
+        with st.container(border=True):
+            st.markdown("**Beginner rule**")
+            st.write("If the app says verify first, treat the stock as a study idea until another quote source agrees with the chart and the news.")
+
     elif track == "News":
         cols = st.columns(2)
         with cols[0]:
@@ -6290,6 +6484,10 @@ def page_learn() -> None:
                 {"Term": "Ask", "Meaning": "The lowest displayed price sellers are currently offering.", "Why it matters": "Buyers often transact near the ask."},
                 {"Term": "Spread", "Meaning": "The gap between bid and ask.", "Why it matters": "Wide spreads make entries and exits more expensive and harder to control."},
                 {"Term": "Time in force", "Meaning": "How long an order stays active, such as day-only or good-till-canceled.", "Why it matters": "A forgotten open order can create surprises."},
+                {"Term": "IEX feed", "Meaning": "A market data feed from the Investors Exchange.", "Why it matters": "Alpaca's free stock candles can use IEX, which is useful but not the full consolidated market tape."},
+                {"Term": "SIP feed", "Meaning": "A consolidated exchange data feed across major US markets.", "Why it matters": "It is closer to full professional real-time data, but it usually costs money because exchanges charge fees."},
+                {"Term": "Delayed quote", "Meaning": "A price that may be behind the current market.", "Why it matters": "A delayed quote can make entries, stops, and targets look safer than they really are."},
+                {"Term": "Data confidence", "Meaning": "The app's trust label based on source, quote age, fallback data, and price mismatch risk.", "Why it matters": "It tells beginners when to slow down and verify before using a setup."},
                 {"Term": "Premarket", "Meaning": "Trading before the regular market open.", "Why it matters": "Moves can be fast, spreads can be wide, and volume can be thinner."},
                 {"Term": "After-hours", "Meaning": "Trading after the regular market close.", "Why it matters": "News often drops after the bell, but fills can be less predictable."},
                 {"Term": "Gapper", "Meaning": "A stock opening or trading far above the prior close.", "Why it matters": "It can reveal fresh demand, but late entries can fade fast."},
