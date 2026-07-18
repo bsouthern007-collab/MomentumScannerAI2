@@ -1270,6 +1270,9 @@ def latest_market_stats(
         "Catalyst": profile["catalyst"],
         "Data source": source,
         "Float source": "Learning estimate" if source == "Learning data" else "Profile estimate",
+        "Market state": "Practice data" if source == "Learning data" else "Chart-derived",
+        "Quote time": chart_timestamp_label(history.index[-1]),
+        "Exchange": "n/a",
     }
 
 
@@ -1401,6 +1404,7 @@ def analyze_ticker(
         "Confidence": confidence,
         "Playbook fit": fit,
         "Data quality": data_quality,
+        "Data confidence": data_confidence_summary({**stats, **plan}).get("label", "n/a"),
         "Status": status,
         "Reasons": reasons,
         "Warnings": warnings,
@@ -1457,6 +1461,7 @@ def run_scan(
                 "Confidence": confidence,
                 "Playbook fit": fit,
                 "Data quality": data_quality,
+                "Data confidence": data_confidence_summary({**row, **plan}).get("label", "n/a"),
                 "Status": status,
                 "Reasons": reasons,
                 "Warnings": warnings,
@@ -1580,6 +1585,7 @@ def broad_market_scan(tickers: tuple[str, ...], max_names: int = 80) -> pd.DataF
                 "Confidence": confidence,
                 "Playbook fit": playbook_fit_label(stats, score),
                 "Data quality": data_quality_badge(stats.get("Data source", source))[0],
+                "Data confidence": data_confidence_summary({**stats, **plan}).get("label", "n/a"),
                 "Status": live_status({**stats, **plan}) if plan else "Watching",
                 "Reasons": reasons,
                 "Warnings": warnings,
@@ -1606,6 +1612,7 @@ def scan_columns(df: pd.DataFrame) -> pd.DataFrame:
         "Setup",
         "Confidence",
         "Data quality",
+        "Data confidence",
         "Buy zone",
         "Entry trigger",
         "Stop",
@@ -1637,7 +1644,7 @@ def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
         st.info("No matches with the current filters.")
         return
     display_df = scan_columns(df)
-    st.caption("Accuracy check: every row shows data quality, source, and quote time. Open Charts for the full price audit before trusting a plan.")
+    st.caption("Accuracy check: every row shows data confidence, data quality, source, and quote time. Open Charts for the full price audit before trusting a plan.")
     event = st.dataframe(
         display_df,
         width="stretch",
@@ -1654,6 +1661,7 @@ def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
             "Float M": st.column_config.NumberColumn("Float", format="%.1fM"),
             "RVOL": st.column_config.NumberColumn("RVOL", format="%.1fx"),
             "AI score": st.column_config.ProgressColumn("AI score", min_value=0, max_value=100),
+            "Data confidence": st.column_config.TextColumn("Data confidence"),
             "Risk/reward": st.column_config.NumberColumn("R/R", format="%.2f"),
         },
     )
@@ -1675,6 +1683,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         "Volume",
         "AI score",
         "Data quality",
+        "Data confidence",
         "Entry trigger",
         "Stop",
         "Target 1",
@@ -1682,7 +1691,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         "Quote time",
     ]
     display_df = df[[column for column in columns if column in df.columns]]
-    st.caption("Accuracy check: source and quote time are shown on each row. Use the chart price audit if a number looks stale or unusual.")
+    st.caption("Accuracy check: data confidence, source, and quote time are shown on each row. Use the chart price audit if a number looks stale or unusual.")
     event = st.dataframe(
         display_df,
         width="stretch",
@@ -1698,6 +1707,7 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
             "RVOL": st.column_config.NumberColumn("RVOL", format="%.1fx"),
             "Volume": st.column_config.NumberColumn("Volume", format="compact"),
             "AI score": st.column_config.ProgressColumn("AI score", min_value=0, max_value=100),
+            "Data confidence": st.column_config.TextColumn("Data confidence"),
         },
     )
     remember_selected_ticker(display_df, event)
@@ -1756,6 +1766,7 @@ def action_queue_frame(df: pd.DataFrame, limit: int = 8) -> pd.DataFrame:
                 "RVOL": rvol,
                 "Why": why,
                 "Data": raw.get("Data quality") or data_quality_badge(raw.get("Data source"))[0],
+                "Confidence": raw.get("Data confidence") or data_confidence_summary(raw).get("label", "n/a"),
             }
         )
 
@@ -1769,7 +1780,7 @@ def render_action_queue(df: pd.DataFrame, key: str) -> None:
     queue = action_queue_frame(df)
     with st.container(border=True):
         st.markdown("**Live action queue**")
-        st.caption("Ranked by action status first, then AI score and RVOL. Select a row to send that stock into Charts, AI Coach, and Trade Desk.")
+        st.caption("Ranked by action status first, then AI score and RVOL. Data confidence flags whether the quote is usable for paper practice. Select a row to send that stock into Charts, AI Coach, and Trade Desk.")
         if queue.empty:
             st.info("No action queue rows yet. Run a scan or add stocks to the watchlist.")
             return
@@ -1790,6 +1801,7 @@ def render_action_queue(df: pd.DataFrame, key: str) -> None:
                 "To entry %": st.column_config.NumberColumn("To entry", format="%.2f%%"),
                 "AI score": st.column_config.ProgressColumn("AI score", min_value=0, max_value=100),
                 "RVOL": st.column_config.NumberColumn("RVOL", format="%.1fx"),
+                "Confidence": st.column_config.TextColumn("Confidence"),
             },
         )
         try:
@@ -2681,6 +2693,135 @@ def chart_timestamp_label(value: Any) -> str:
         return "n/a"
 
 
+def parse_display_timestamp(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text or text.lower() in {"n/a", "nan", "none"}:
+        return None
+    try:
+        timestamp = pd.Timestamp(text)
+        if pd.isna(timestamp):
+            return None
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.tz_convert(None)
+        return timestamp.to_pydatetime().replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def quote_age_minutes(value: Any) -> float | None:
+    timestamp = parse_display_timestamp(value)
+    if timestamp is None:
+        return None
+    age = (datetime.now() - timestamp).total_seconds() / 60
+    if age < -5:
+        return None
+    return max(age, 0)
+
+
+def age_label(minutes: float | None) -> str:
+    if minutes is None:
+        return "time missing"
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{int(minutes)}m ago"
+    if minutes < 1440:
+        hours = int(minutes // 60)
+        mins = int(minutes % 60)
+        return f"{hours}h {mins}m ago"
+    days = int(minutes // 1440)
+    hours = int((minutes % 1440) // 60)
+    return f"{days}d {hours}h ago"
+
+
+def looks_like_last_regular_session(value: Any) -> bool:
+    timestamp = parse_display_timestamp(value)
+    if timestamp is None:
+        return False
+    age_hours = (datetime.now() - timestamp).total_seconds() / 3600
+    if age_hours < 0 or age_hours > 96:
+        return False
+    return (timestamp.hour == 13 and timestamp.minute <= 10) or (timestamp.hour == 16 and timestamp.minute <= 10)
+
+
+def data_confidence_summary(
+    analysis: dict[str, Any],
+    chart_source: str | None = None,
+    chart_diff_pct: float | None = None,
+) -> dict[str, Any]:
+    source = str(analysis.get("Data source", "n/a"))
+    source_text = f"{source} {chart_source or ''}".lower()
+    quote_time = analysis.get("Quote time", "n/a")
+    market_state = str(analysis.get("Market state", "n/a")).upper()
+    age_minutes = quote_age_minutes(quote_time)
+    score = 100
+    notes: list[str] = []
+
+    if "learning" in source_text:
+        return {
+            "label": "Practice data",
+            "color": "orange",
+            "score": 25,
+            "age": age_label(age_minutes),
+            "detail": "This view includes learning fallback data, so use it for practice only.",
+        }
+
+    if "finnhub" in source_text:
+        notes.append("Finnhub live quote is available.")
+    elif "yahoo" in source_text:
+        score -= 5
+        notes.append("Yahoo data is available, but free feeds can be delayed.")
+    else:
+        score -= 20
+        notes.append("The active source is not a recognized live quote feed.")
+
+    if chart_diff_pct is not None:
+        if chart_diff_pct > 1.0:
+            score -= 30
+            notes.append("The chart candle and active quote differ by more than 1%.")
+        elif chart_diff_pct > 0.35:
+            score -= 8
+            notes.append("The chart candle and active quote are close, but not identical.")
+        else:
+            notes.append("The chart candle and active quote are closely aligned.")
+
+    if age_minutes is None:
+        score -= 12
+        notes.append("The quote time is missing.")
+    elif age_minutes <= 20:
+        notes.append("The quote timestamp looks fresh.")
+    elif "CLOSED" in market_state or "POST" in market_state or looks_like_last_regular_session(quote_time):
+        score -= 5
+        notes.append("The quote looks like a last regular-session print, which is normal after hours.")
+    elif age_minutes <= 120:
+        score -= 12
+        notes.append("The quote may be delayed.")
+    elif age_minutes <= 1440:
+        score -= 22
+        notes.append("The quote is older than a normal live check.")
+    else:
+        score -= 35
+        notes.append("The quote is more than a day old.")
+
+    score = max(0, min(100, int(score)))
+    if score >= 85:
+        label, color = "High confidence", "green"
+    elif score >= 65:
+        label, color = "Usable for paper", "blue"
+    elif score >= 45:
+        label, color = "Verify first", "orange"
+    else:
+        label, color = "Practice only", "red"
+
+    return {
+        "label": label,
+        "color": color,
+        "score": score,
+        "age": age_label(age_minutes),
+        "detail": " ".join(notes),
+    }
+
+
 def price_audit_frame(
     ticker: str,
     history: pd.DataFrame,
@@ -2754,6 +2895,7 @@ def render_price_audit_panel(
         chart_price = safe_float(history.iloc[-1].get("Close"))
     chart_diff_pct = abs((chart_price - plan_price) / plan_price * 100) if chart_price is not None and plan_price else None
     live_rows = audit[audit["Source"].isin(["Finnhub quote", "Yahoo quote"])] if not audit.empty else pd.DataFrame()
+    confidence = data_confidence_summary(analysis, chart_source, chart_diff_pct)
 
     status_label = "Price source unknown"
     status_color = "gray"
@@ -2774,6 +2916,7 @@ def render_price_audit_panel(
         st.markdown("**Price audit**")
         with st.container(horizontal=True):
             st.badge(status_label, icon=":material/price_check:", color=status_color)
+            st.badge(str(confidence["label"]), icon=":material/verified:", color=str(confidence["color"]))
             st.badge(str(analysis.get("Data source", "n/a")), icon=":material/database:", color=data_quality_badge(analysis.get("Data source"))[1])
             st.badge(str(chart_source), icon=":material/candlestick_chart:", color=data_quality_badge(chart_source)[1])
 
@@ -2781,7 +2924,10 @@ def render_price_audit_panel(
         cols[0].metric("Active price", money(plan_price), border=True)
         cols[1].metric("Chart last", money(chart_price), border=True)
         cols[2].metric("Chart difference", pct(chart_diff_pct), border=True)
-        cols[3].metric("Quote time", str(analysis.get("Quote time", "n/a")), border=True)
+        cols[3].metric("Quote age", str(confidence["age"]), str(analysis.get("Quote time", "n/a")), border=True)
+
+        st.progress(float(confidence["score"]) / 100)
+        st.caption(f"Data confidence: {confidence['score']}/100. {confidence['detail']}")
 
         if status_label == "Price mismatch":
             st.warning(
@@ -2792,6 +2938,11 @@ def render_price_audit_panel(
             st.warning(
                 "This stock is using learning fallback data. Do not treat these prices as live market prices.",
                 icon=":material/school:",
+            )
+        elif confidence["label"] in {"Verify first", "Practice only"}:
+            st.warning(
+                "Verify this stock in Charts and with your broker or another quote source before using the plan, even for paper practice.",
+                icon=":material/fact_check:",
             )
         else:
             st.caption("Free feeds can still be delayed. Use this panel to verify the source and time before trusting a paper-trade plan.")
@@ -2877,6 +3028,75 @@ def first_readable(items: list[Any] | tuple[Any, ...], fallback: str, limit: int
     return "; ".join(clean[:limit])
 
 
+def stock_fact_sheet_frame(analysis: dict[str, Any], chart_source: str | None = None) -> pd.DataFrame:
+    asset_type = asset_type_label(analysis)
+    confidence = data_confidence_summary(analysis, chart_source)
+    return pd.DataFrame(
+        [
+            {
+                "Fact": "Company/name",
+                "Value": str(analysis.get("Company", analysis.get("Ticker", "n/a"))),
+                "Beginner meaning": "The business, ETF, or index you are studying.",
+            },
+            {
+                "Fact": "Type",
+                "Value": asset_type,
+                "Beginner meaning": "Stocks, ETFs, and indexes behave differently. Small-float rules mostly apply to stocks.",
+            },
+            {
+                "Fact": "Exchange",
+                "Value": str(analysis.get("Exchange", "n/a")),
+                "Beginner meaning": "Where the quote is listed or reported from.",
+            },
+            {
+                "Fact": "Market state",
+                "Value": str(analysis.get("Market state", "n/a")),
+                "Beginner meaning": "Tells whether the feed is regular, premarket, after-hours, closed, chart-derived, or practice data.",
+            },
+            {
+                "Fact": "Previous close",
+                "Value": money(safe_float(analysis.get("Previous close"))),
+                "Beginner meaning": "The reference price used to understand today's move.",
+            },
+            {
+                "Fact": "Volume",
+                "Value": compact_number(safe_float(analysis.get("Volume"))),
+                "Beginner meaning": "How many shares traded in the current feed window.",
+            },
+            {
+                "Fact": "Average volume",
+                "Value": compact_number(safe_float(analysis.get("Average volume"))),
+                "Beginner meaning": "Normal activity estimate used to calculate RVOL.",
+            },
+            {
+                "Fact": "Float estimate",
+                "Value": f"{safe_float(analysis.get('Float M'), 0) or 0:.1f}M",
+                "Beginner meaning": "Lower float can move faster, but the estimate may come from a profile source.",
+            },
+            {
+                "Fact": "Float source",
+                "Value": str(analysis.get("Float source", "n/a")),
+                "Beginner meaning": "Shows whether float came from Yahoo, a shares-outstanding proxy, or a local estimate.",
+            },
+            {
+                "Fact": "Quote source",
+                "Value": str(analysis.get("Data source", "n/a")),
+                "Beginner meaning": "Where the active price came from.",
+            },
+            {
+                "Fact": "Quote age",
+                "Value": str(confidence["age"]),
+                "Beginner meaning": "How old the displayed quote time looks from this computer.",
+            },
+            {
+                "Fact": "Confidence",
+                "Value": f"{confidence['label']} ({confidence['score']}/100)",
+                "Beginner meaning": "Quick trust check based on source, quote age, fallback data, and mismatch risk.",
+            },
+        ]
+    )
+
+
 def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | None = None) -> None:
     ticker = str(analysis.get("Ticker", "Stock"))
     company = str(analysis.get("Company", ticker))
@@ -2892,6 +3112,7 @@ def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | 
     warnings = [str(item) for item in analysis.get("Warnings", [])]
     reasons = [str(item) for item in analysis.get("Reasons", [])]
     catalyst = str(analysis.get("Catalyst", "")).strip()
+    confidence = data_confidence_summary(analysis, chart_source)
 
     with st.container(border=True):
         st.markdown("**Plain-English stock guide**")
@@ -2900,6 +3121,7 @@ def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | 
             st.badge(status, icon=":material/radar:", color="green" if status in {"Breakout trigger", "In buy zone"} else "blue")
             st.badge(fit, icon=":material/filter_alt:", color=playbook_fit_color(fit))
             st.badge(data_quality, icon=":material/database:", color=data_color)
+            st.badge(str(confidence["label"]), icon=":material/verified:", color=str(confidence["color"]))
 
         cols = st.columns(4)
         cols[0].metric("Stock", ticker, company[:34], border=True)
@@ -2911,6 +3133,9 @@ def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | 
         st.markdown(markdown_text(f"**What is happening:** {beginner_movement_text(analysis, asset_type)}"))
         st.markdown(markdown_text(f"**Why traders care:** {first_readable(reasons, catalyst or 'The app has not found a strong rule-based reason yet.')}"))
         st.markdown(markdown_text(f"**What the AI helper says:** {action_text}"))
+
+        with st.expander("Stock facts in plain English", expanded=False, icon=":material/fact_check:"):
+            st.dataframe(stock_fact_sheet_frame(analysis, chart_source), width="stretch", hide_index=True)
 
         level_rows = pd.DataFrame(
             [
@@ -2952,8 +3177,9 @@ def render_beginner_stock_summary(analysis: dict[str, Any], chart_source: str | 
         with explain_cols[1]:
             st.markdown("**Data trust check**")
             st.write(f"- Active price source: {source}")
-            st.write(f"- Quote time: {quote_time}")
+            st.write(f"- Quote time: {quote_time} ({confidence['age']})")
             st.write(f"- Chart candle source: {chart_source or source}")
+            st.write(f"- Confidence: {confidence['label']} ({confidence['score']}/100)")
             if "learning" in f"{source} {chart_source}".lower():
                 st.warning("This stock is using learning fallback data somewhere in the view. Treat it as practice only.", icon=":material/school:")
             elif warnings:
@@ -4165,6 +4391,7 @@ def tracker_row(analysis: dict[str, Any], track_type: str) -> dict[str, Any]:
         "Distance to entry %": ((entry - price) / price * 100) if entry and price else None,
         "Risk to stop %": ((price - stop) / price * 100) if stop and price else None,
         "Data quality": data_quality,
+        "Data confidence": analysis.get("Data confidence") or data_confidence_summary(analysis).get("label", "n/a"),
         "Data source": analysis.get("Data source", "n/a"),
         "Quote time": analysis.get("Quote time", "n/a"),
     }
@@ -4909,6 +5136,7 @@ def page_learn() -> None:
                     {"Field": "RVOL", "What it means": "Today's volume compared with normal volume.", "Beginner move": "The app wants high attention, usually 3x or more for this playbook."},
                     {"Field": "Float", "What it means": "Roughly how many shares can trade publicly.", "Beginner move": "Low float can move fast, but it can also reverse fast."},
                     {"Field": "Price audit", "What it means": "The app checks source, time, and whether price feeds disagree.", "Beginner move": "If it says mismatch or fallback, use the stock for study only."},
+                    {"Field": "Data confidence", "What it means": "A quick trust label based on source, quote age, fallback data, and feed agreement.", "Beginner move": "High confidence is cleaner for paper practice. Verify first means slow down and check another source."},
                     {"Field": "AI score", "What it means": "A checklist score based on the app's rules.", "Beginner move": "Use it to focus your study, not as a profit promise."},
                     {"Field": "Entry trigger", "What it means": "The confirmation price.", "Beginner move": "Avoid guessing early. Wait for confirmation on the chart."},
                     {"Field": "Stop loss", "What it means": "Where the idea is wrong.", "Beginner move": "If this loss feels too big, reduce paper size or skip."},
@@ -4916,6 +5144,7 @@ def page_learn() -> None:
                 ]
             )
             st.dataframe(reading_guide, width="stretch", hide_index=True)
+            st.caption("Data confidence labels: High confidence is cleaner for paper practice, Usable for paper is acceptable for learning, Verify first means check another source, and Practice data means do not treat it as live.")
 
         with st.container(border=True):
             st.markdown("**What the app levels mean**")
