@@ -1736,6 +1736,8 @@ def broad_market_scan(tickers: tuple[str, ...], max_names: int = 80) -> pd.DataF
 def scan_columns(df: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "Ticker",
+        "Priority",
+        "Rules ready",
         "Playbook fit",
         "Company",
         "Status",
@@ -1774,12 +1776,62 @@ def remember_selected_ticker(display_df: pd.DataFrame, event: Any) -> None:
         st.caption(f"{ticker} stock selected for Charts and AI Coach.")
 
 
+def scanner_rule_match_label(row: pd.Series | dict[str, Any]) -> str:
+    price = safe_float(row.get("Price"), 0) or 0
+    gain = safe_float(row.get("Daily gain %"), 0) or 0
+    float_m = safe_float(row.get("Float M"), 999) or 999
+    rvol = safe_float(row.get("RVOL"), 0) or 0
+    checks = [
+        DEFAULT_RULES["min_price"] <= price <= DEFAULT_RULES["max_price"],
+        gain >= DEFAULT_RULES["min_gain_pct"],
+        float_m <= DEFAULT_RULES["max_float_m"],
+        rvol >= DEFAULT_RULES["min_rvol"],
+    ]
+    return f"{sum(bool(check) for check in checks)}/4"
+
+
+def scanner_priority_label(row: pd.Series | dict[str, Any]) -> str:
+    status = str(row.get("Status", "Watching"))
+    data_confidence = str(row.get("Data confidence", ""))
+    score = safe_float(row.get("AI score"), 0) or 0
+    if status == "No quote" or "Low" in data_confidence:
+        return "Verify data"
+    if status == "Breakout trigger" and score >= 74:
+        return "Review now"
+    if status == "In buy zone":
+        return "Wait trigger"
+    if status in {"Near buy zone", "Momentum active"}:
+        return "Watchlist"
+    if status == "Below stop":
+        return "Skip"
+    if score >= 74:
+        return "Strong study"
+    return "Study"
+
+
+def add_scanner_readability_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    display_df = df.copy()
+    priority = display_df.apply(scanner_priority_label, axis=1)
+    rules_ready = display_df.apply(scanner_rule_match_label, axis=1)
+    if "Priority" in display_df.columns:
+        display_df["Priority"] = priority
+    else:
+        display_df.insert(1, "Priority", priority)
+    if "Rules ready" in display_df.columns:
+        display_df["Rules ready"] = rules_ready
+    else:
+        display_df.insert(2, "Rules ready", rules_ready)
+    return display_df
+
+
 def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
     if df.empty:
         st.info("No matches with the current filters.")
         return
-    display_df = scan_columns(df)
-    st.caption("Accuracy check: every row shows data confidence, data quality, source, and quote time. Open Charts for the full price audit before trusting a plan.")
+    display_df = scan_columns(add_scanner_readability_columns(df))
+    st.caption("Rank read: Priority explains the next action; Rules ready is price/gain/float/RVOL. Verify data confidence and quote time before trusting any paper plan.")
     event = st.dataframe(
         display_df,
         width="stretch",
@@ -1789,6 +1841,8 @@ def show_scan_table(df: pd.DataFrame, key: str = "scan_table") -> None:
         selection_mode="single-row",
         column_config={
             "Ticker": st.column_config.TextColumn("Stock", pinned=True),
+            "Priority": st.column_config.TextColumn("Priority"),
+            "Rules ready": st.column_config.TextColumn("Rules"),
             "Playbook fit": st.column_config.TextColumn("Fit"),
             "Status": st.column_config.TextColumn("Status"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
@@ -1825,8 +1879,10 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         "Data source",
         "Quote time",
     ]
-    display_df = df[[column for column in columns if column in df.columns]]
-    st.caption("Accuracy check: data confidence, source, and quote time are shown on each row. Use the chart price audit if a number looks stale or unusual.")
+    display_df = add_scanner_readability_columns(df)
+    columns = ["Ticker", "Priority", "Rules ready", *columns[1:]]
+    display_df = display_df[[column for column in columns if column in display_df.columns]]
+    st.caption("Rank read: Priority explains the next action; Rules ready is price/gain/float/RVOL. Use the chart price audit if a number looks stale or unusual.")
     event = st.dataframe(
         display_df,
         width="stretch",
@@ -1836,6 +1892,8 @@ def show_broad_market_table(df: pd.DataFrame) -> None:
         selection_mode="single-row",
         column_config={
             "Ticker": st.column_config.TextColumn("Stock", pinned=True),
+            "Priority": st.column_config.TextColumn("Priority"),
+            "Rules ready": st.column_config.TextColumn("Rules"),
             "Playbook fit": st.column_config.TextColumn("Fit"),
             "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
             "Daily gain %": st.column_config.NumberColumn("Gain", format="%.2f%%"),
@@ -5012,6 +5070,17 @@ def lightweight_chart_payload(
         {"label": "TP1", "value": money(levels["target_1"]), "tone": "up", "detail": "first sell"},
         {"label": "TP2", "value": money(levels["target_2"]), "tone": "up", "detail": "runner"},
     ]
+    status = live_status(analysis)
+    side_panel = {
+        "status": status,
+        "setup": str(analysis.get("Setup", "n/a")),
+        "confidence": str(analysis.get("Confidence", "n/a")),
+        "fit": str(analysis.get("Playbook fit", "n/a")),
+        "score": int(safe_float(analysis.get("AI score"), 0) or 0),
+        "source": str(analysis.get("Data source", "n/a")),
+        "price": money(current_price),
+        "riskReward": f"{risk_reward:.2f}R" if risk_reward is not None else "n/a",
+    }
 
     return {
         "ticker": str(analysis.get("Ticker", "Stock")),
@@ -5040,8 +5109,9 @@ def lightweight_chart_payload(
         "visibleCount": int(visible_candles or min(len(candles), 60)),
         "activeEndIndex": int(active_end_index),
         "lastTime": int(candles[active_end_index]["time"]) if candles else None,
+        "sidePanel": side_panel,
         "palette": palette,
-        "status": live_status(analysis),
+        "status": status,
     }
 
 
@@ -5056,7 +5126,7 @@ def render_lightweight_trading_chart(
     if not payload["candles"]:
         return False
 
-    chart_height = max(height + 230, 710)
+    chart_height = max(height + 260, 750)
     chart_script = lightweight_charts_script()
     chart_loader = (
         f"<script>\n{chart_script}\n</script>"
@@ -5096,10 +5166,19 @@ def render_lightweight_trading_chart(
     <div class="tw-hint">Wheel zoom | Drag pan | Double-click reset</div>
   </div>
   <div id="tw-planbar" class="tw-planbar"></div>
-  <div class="tw-stage">
-    <div id="tw-chart" class="tw-chart"></div>
-    <canvas id="tw-wick-layer" class="tw-wick-layer" aria-hidden="true"></canvas>
-    <div class="tw-watermark">__TICKER__</div>
+  <div class="tw-workspace">
+    <div class="tw-stage">
+      <div id="tw-chart" class="tw-chart"></div>
+      <canvas id="tw-wick-layer" class="tw-wick-layer" aria-hidden="true"></canvas>
+      <div class="tw-watermark">__TICKER__</div>
+    </div>
+    <aside class="tw-side-panel" aria-label="AI trade plan summary">
+      <div class="tw-side-head">
+        <span>AI plan</span>
+        <strong id="tw-side-score"></strong>
+      </div>
+      <div id="tw-side-body" class="tw-side-body"></div>
+    </aside>
   </div>
   <div class="tw-footer">
     <div class="tw-footer-buttons" aria-label="Calendar range buttons">
@@ -5134,6 +5213,8 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   const status = document.getElementById("tw-status");
   const symbol = document.getElementById("tw-symbol");
   const clock = document.getElementById("tw-clock");
+  const sideScore = document.getElementById("tw-side-score");
+  const sideBody = document.getElementById("tw-side-body");
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
@@ -5168,6 +5249,30 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   } else {
     planbar.innerHTML = "<div class='tw-level-chip'><span>Levels</span><strong>Hidden</strong><em>toggle on</em></div>";
   }
+  const side = payload.sidePanel || {};
+  const statusTone = ["Breakout trigger", "In buy zone"].includes(side.status) ? "ready" :
+    ["Near buy zone", "Momentum active", "Watching"].includes(side.status) ? "watch" :
+    side.status === "Below stop" ? "danger" : "neutral";
+  const nextMove = statusTone === "ready"
+    ? "Review spread, news, volume, and paper-order approval before any action."
+    : statusTone === "watch"
+      ? "Wait for a cleaner trigger. Do not chase a candle that already moved."
+      : statusTone === "danger"
+        ? "Plan is invalid until price reclaims the setup area."
+        : "Keep scanning and compare this stock against stronger setups.";
+  sideScore.textContent = Number.isFinite(Number(side.score)) ? Number(side.score) + "/100" : "n/a";
+  sideBody.innerHTML =
+    "<div class='tw-side-status tw-side-" + statusTone + "'>" +
+      "<span>Status</span><strong>" + esc(side.status || "Watching") + "</strong>" +
+    "</div>" +
+    "<div class='tw-side-grid'>" +
+      "<div><span>Price</span><strong>" + esc(side.price || "n/a") + "</strong></div>" +
+      "<div><span>R/R</span><strong>" + esc(side.riskReward || "n/a") + "</strong></div>" +
+      "<div><span>Setup</span><strong>" + esc(side.setup || "n/a") + "</strong></div>" +
+      "<div><span>Trust</span><strong>" + esc(side.confidence || "n/a") + "</strong></div>" +
+    "</div>" +
+    "<div class='tw-side-note'>" + esc(nextMove) + "</div>" +
+    "<div class='tw-side-source'><span>Source</span><strong>" + esc(side.source || "n/a") + "</strong></div>";
   if (!window.LightweightCharts) {
     container.innerHTML = "<div class='tw-error'>The chart library did not load. Switch Chart style to Backup Plotly in Chart controls.</div>";
     return;
@@ -5848,25 +5953,25 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   }
   .tw-planbar {
     flex: 0 0 auto;
-    min-height: 38px;
+    min-height: 36px;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 7px;
-    padding: 7px 12px;
+    gap: 6px;
+    padding: 6px 12px;
     border-bottom: 1px solid __BORDER__;
     background: __PANEL__;
   }
   .tw-level-chip {
-    min-width: 116px;
+    min-width: 108px;
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: baseline;
-    gap: 7px;
+    gap: 6px;
     border: 1px solid __BORDER__;
     border-radius: 6px;
     background: __PANEL__;
-    padding: 5px 8px;
+    padding: 4px 8px;
     color: __TEXT__;
   }
   .tw-level-chip span {
@@ -5892,9 +5997,16 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     white-space: nowrap;
     padding-right: 12px;
   }
-  .tw-stage {
+  .tw-workspace {
     flex: 1 1 0;
+    min-height: 420px;
+    display: flex;
+    background: __PANEL__;
+  }
+  .tw-stage {
+    flex: 1 1 auto;
     position: relative;
+    min-width: 0;
     min-height: 420px;
     height: auto;
     background: __PANEL__;
@@ -5931,6 +6043,99 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     image-rendering: auto;
     transform: translateZ(0);
     backface-visibility: hidden;
+  }
+  .tw-side-panel {
+    flex: 0 0 238px;
+    border-left: 1px solid __BORDER__;
+    border-top: 1px solid rgba(148, 163, 184, 0.08);
+    background: linear-gradient(180deg, __PANEL__ 0%, __PANEL_ALT__ 100%);
+    padding: 11px 11px 10px;
+    color: __TEXT__;
+    overflow: hidden;
+  }
+  .tw-side-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid __BORDER__;
+  }
+  .tw-side-head span {
+    color: __MUTED__;
+    font-size: 11px;
+    font-weight: 820;
+    text-transform: uppercase;
+  }
+  .tw-side-head strong {
+    color: __TEXT__;
+    font-size: 13px;
+    font-weight: 880;
+  }
+  .tw-side-body {
+    display: grid;
+    gap: 9px;
+    padding-top: 10px;
+  }
+  .tw-side-status {
+    border: 1px solid __BORDER__;
+    border-left: 4px solid __BLUE__;
+    border-radius: 7px;
+    padding: 9px 10px;
+    background: __PANEL__;
+  }
+  .tw-side-ready { border-left-color: __UP__; }
+  .tw-side-watch { border-left-color: __BLUE__; }
+  .tw-side-danger { border-left-color: __DOWN__; }
+  .tw-side-neutral { border-left-color: __MUTED__; }
+  .tw-side-status span,
+  .tw-side-grid span,
+  .tw-side-source span {
+    display: block;
+    color: __MUTED__;
+    font-size: 10px;
+    font-weight: 820;
+    text-transform: uppercase;
+  }
+  .tw-side-status strong {
+    display: block;
+    margin-top: 4px;
+    color: __TEXT__;
+    font-size: 14px;
+    font-weight: 880;
+    line-height: 1.1;
+  }
+  .tw-side-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+  .tw-side-grid div,
+  .tw-side-source {
+    border: 1px solid __BORDER__;
+    border-radius: 7px;
+    background: __PANEL__;
+    padding: 8px 9px;
+    min-width: 0;
+  }
+  .tw-side-grid strong,
+  .tw-side-source strong {
+    display: block;
+    margin-top: 4px;
+    color: __TEXT__;
+    font-size: 12px;
+    font-weight: 820;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .tw-side-note {
+    border: 1px solid __BORDER__;
+    border-radius: 7px;
+    background: rgba(59, 130, 246, 0.08);
+    color: __MUTED__;
+    font-size: 12px;
+    line-height: 1.34;
+    padding: 9px 10px;
   }
   .tw-footer {
     flex: 0 0 auto;
@@ -5990,6 +6195,15 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     }
     .tw-stage {
       min-height: 360px;
+    }
+    .tw-workspace {
+      flex-direction: column;
+      min-height: 500px;
+    }
+    .tw-side-panel {
+      flex: 0 0 auto;
+      border-left: 0;
+      border-top: 1px solid __BORDER__;
     }
     .tw-footer-pill:first-child {
       border-left: 0;
