@@ -1864,6 +1864,22 @@ def render_news_items(news: list[dict[str, Any]], empty_message: str = "No Finnh
                 st.markdown(markdown_text(summary[:360] + ("..." if len(summary) > 360 else "")))
 
 
+def render_lazy_news_expander(
+    label: str,
+    news_loader: Any,
+    empty_message: str = "No Finnhub news returned yet.",
+    expanded: bool = False,
+    icon: str = ":material/article:",
+) -> None:
+    news_panel = st.expander(label, expanded=expanded, icon=icon, on_change="rerun")
+    is_open = bool(news_panel.open) if news_panel.open is not None else expanded
+    if is_open:
+        with news_panel:
+            render_news_items(news_loader(), empty_message)
+    else:
+        st.caption(f"Open {label.lower()} when you need headlines. Keeping it closed makes auto-refresh pages faster.")
+
+
 @st.cache_data(ttl=20, max_entries=150, show_spinner=False)
 def yahoo_quote_stats(ticker: str) -> dict[str, Any] | None:
     ticker = normalize_user_symbol(ticker)
@@ -8103,8 +8119,10 @@ def render_chart_panel(
     render_ai_decision_panel(analysis, source)
     render_ai_chart_trade_map(analysis)
     render_plan_card(analysis)
-    with st.expander(f":material/article: Latest {ticker.upper()} news", expanded=True):
-        render_news_items(finnhub_company_news(ticker, days=5, limit=5))
+    render_lazy_news_expander(
+        f"Latest {ticker.upper()} news",
+        lambda: finnhub_company_news(ticker, days=5, limit=5),
+    )
 
 
 @st.fragment(run_every=f"{LIVE_REFRESH_SECONDS}s")
@@ -8554,8 +8572,12 @@ def page_market_scan() -> None:
     show_broad_market_table(df)
 
     if include_news:
-        with st.expander(":material/newspaper: General market news", expanded=True):
-            render_news_items(finnhub_market_news("general", limit=8), "No general market news returned yet.")
+        render_lazy_news_expander(
+            "General market news",
+            lambda: finnhub_market_news("general", limit=8),
+            "No general market news returned yet.",
+            icon=":material/newspaper:",
+        )
 
 
 def page_charts() -> None:
@@ -8664,8 +8686,10 @@ def page_ai_coach() -> None:
     render_beginner_stock_summary(analysis, source)
     render_ai_decision_panel(analysis, source)
     render_plan_card(analysis)
-    with st.expander(f":material/article: News catalyst for {analysis.get('Ticker', ticker)}", expanded=True):
-        render_news_items(finnhub_company_news(str(analysis.get("Ticker", ticker)), days=5, limit=5))
+    render_lazy_news_expander(
+        f"News catalyst for {analysis.get('Ticker', ticker)}",
+        lambda: finnhub_company_news(str(analysis.get("Ticker", ticker)), days=5, limit=5),
+    )
 
     with st.container(border=True):
         st.markdown("**Paper-trade checklist**")
@@ -8725,7 +8749,10 @@ def page_watchlist() -> None:
         render_setup_command_strip(study_analysis, str(study_analysis.get("Data source", "n/a")), context="watchlist")
         render_beginner_stock_summary(study_analysis, str(study_analysis.get("Data source", "n/a")))
         render_plan_card(study_analysis)
-        render_news_items(finnhub_company_news(study_ticker, days=5, limit=5))
+        render_lazy_news_expander(
+            f"Latest {study_ticker} news",
+            lambda: finnhub_company_news(study_ticker, days=5, limit=5),
+        )
 
 
 def page_trade_desk() -> None:
