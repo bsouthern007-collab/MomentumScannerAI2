@@ -53,8 +53,18 @@ def main() -> None:
     json.dumps(chart_payload)
     assert app.clean_market_symbol("brk.b") == "BRK-B"
     assert app.normalize_user_symbol("S&P 500") == "^GSPC"
+    assert app.normalize_user_symbol("S and P 500") == "^GSPC"
+    assert app.normalize_user_symbol("standard and poors 500") == "^GSPC"
     assert app.normalize_user_symbol("SP500") == "^GSPC"
     assert app.normalize_user_symbol("SPX") == "^GSPC"
+    assert app.normalize_user_symbol("Nasdaq 100") == "^NDX"
+    assert app.profile_for("NDX")["company"] == "Nasdaq 100 Index"
+    clock_df = app.market_clock_frame()
+    assert {"Market", "Local time", "State", "Typical session", "Beginner read"}.issubset(clock_df.columns)
+    assert set(clock_df["State"]).issubset({"Premarket", "Regular session", "After-hours", "Closed", "Weekend", "Check session"})
+    new_york = app.MARKET_CLOCKS[0]
+    assert app.market_clock_state(app.pd.Timestamp("2026-07-20 10:00", tz="America/New_York"), new_york) == "Regular session"
+    assert app.market_clock_state(app.pd.Timestamp("2026-07-20 18:00", tz="America/New_York"), new_york) == "After-hours"
     index_analysis = app.analyze_ticker("S&P 500", prefer_live=False)
     assert index_analysis["Ticker"] == "^GSPC"
     assert index_analysis["Price"] > 0
@@ -66,6 +76,7 @@ def main() -> None:
     result = app.backtest_strategy("SOUN", "6mo", False, 10, 3, 3)
     assert "summary" in result
     assert "trades" in result
+    app.clear_live_market_caches()
 
     print("smoke tests passed")
 

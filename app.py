@@ -877,24 +877,43 @@ DEFAULT_MARKET_SCAN_BATCH = 80
 SYMBOL_ALIASES = {
     "S&P500": "^GSPC",
     "S&P 500": "^GSPC",
+    "S AND P 500": "^GSPC",
+    "SANDP500": "^GSPC",
+    "S P 500": "^GSPC",
+    "SP 500": "^GSPC",
     "SP500": "^GSPC",
+    "SNP500": "^GSPC",
+    "STANDARD AND POORS 500": "^GSPC",
+    "STANDARD & POORS 500": "^GSPC",
     "SPX": "^GSPC",
     "GSPC": "^GSPC",
     "NASDAQ": "^IXIC",
     "NASDAQ COMPOSITE": "^IXIC",
+    "NASDAQCOMP": "^IXIC",
     "IXIC": "^IXIC",
+    "NASDAQ 100": "^NDX",
+    "NASDAQ100": "^NDX",
+    "NDX": "^NDX",
     "DOW": "^DJI",
+    "DOW 30": "^DJI",
+    "DOW30": "^DJI",
     "DOW JONES": "^DJI",
+    "DOW JONES INDUSTRIAL AVERAGE": "^DJI",
     "DJIA": "^DJI",
     "DJI": "^DJI",
+    "RUSSELL": "^RUT",
     "RUSSELL 2000": "^RUT",
     "RUSSELL2000": "^RUT",
+    "RUSSELL 2K": "^RUT",
+    "RUSSELL2K": "^RUT",
     "RUT": "^RUT",
+    "VOLATILITY INDEX": "^VIX",
     "VIX": "^VIX",
 }
 INDEX_PROFILES = {
     "^GSPC": {"company": "S&P 500 Index", "sector": "Broad market index", "float_m": 0.0, "catalyst": "Broad US large-cap market movement"},
     "^IXIC": {"company": "Nasdaq Composite Index", "sector": "Technology-heavy market index", "float_m": 0.0, "catalyst": "Broad Nasdaq market movement"},
+    "^NDX": {"company": "Nasdaq 100 Index", "sector": "Large-cap technology-heavy index", "float_m": 0.0, "catalyst": "Broad Nasdaq 100 market movement"},
     "^DJI": {"company": "Dow Jones Industrial Average", "sector": "Blue-chip market index", "float_m": 0.0, "catalyst": "Broad Dow market movement"},
     "^RUT": {"company": "Russell 2000 Index", "sector": "Small-cap market index", "float_m": 0.0, "catalyst": "Broad small-cap market movement"},
     "^VIX": {"company": "CBOE Volatility Index", "sector": "Volatility index", "float_m": 0.0, "catalyst": "Market volatility movement"},
@@ -986,13 +1005,66 @@ GLOBAL_MARKET_WATCH = {
 }
 
 MARKET_CLOCKS = [
-    {"Market": "New York", "Timezone": "America/New_York", "Typical session": "9:30 AM - 4:00 PM"},
-    {"Market": "Phoenix", "Timezone": "America/Phoenix", "Typical session": "6:30 AM - 1:00 PM"},
-    {"Market": "London", "Timezone": "Europe/London", "Typical session": "8:00 AM - 4:30 PM"},
-    {"Market": "Frankfurt", "Timezone": "Europe/Berlin", "Typical session": "9:00 AM - 5:30 PM"},
-    {"Market": "Tokyo", "Timezone": "Asia/Tokyo", "Typical session": "9:00 AM - 3:00 PM"},
-    {"Market": "Hong Kong", "Timezone": "Asia/Hong_Kong", "Typical session": "9:30 AM - 4:00 PM"},
-    {"Market": "Sydney", "Timezone": "Australia/Sydney", "Typical session": "10:00 AM - 4:00 PM"},
+    {
+        "Market": "New York",
+        "Timezone": "America/New_York",
+        "Typical session": "9:30 AM - 4:00 PM",
+        "Open": "09:30",
+        "Close": "16:00",
+        "Premarket": "04:00",
+        "After hours": "20:00",
+        "Beginner read": "Main US stock session.",
+    },
+    {
+        "Market": "Phoenix",
+        "Timezone": "America/Phoenix",
+        "Typical session": "6:30 AM - 1:00 PM",
+        "Open": "06:30",
+        "Close": "13:00",
+        "Premarket": "01:00",
+        "After hours": "17:00",
+        "Beginner read": "Same US session shown in Arizona time.",
+    },
+    {
+        "Market": "London",
+        "Timezone": "Europe/London",
+        "Typical session": "8:00 AM - 4:30 PM",
+        "Open": "08:00",
+        "Close": "16:30",
+        "Beginner read": "European cash market reference.",
+    },
+    {
+        "Market": "Frankfurt",
+        "Timezone": "Europe/Berlin",
+        "Typical session": "9:00 AM - 5:30 PM",
+        "Open": "09:00",
+        "Close": "17:30",
+        "Beginner read": "German cash market reference.",
+    },
+    {
+        "Market": "Tokyo",
+        "Timezone": "Asia/Tokyo",
+        "Typical session": "9:00 AM - 3:00 PM",
+        "Open": "09:00",
+        "Close": "15:00",
+        "Beginner read": "Japan cash market reference.",
+    },
+    {
+        "Market": "Hong Kong",
+        "Timezone": "Asia/Hong_Kong",
+        "Typical session": "9:30 AM - 4:00 PM",
+        "Open": "09:30",
+        "Close": "16:00",
+        "Beginner read": "Hong Kong cash market reference.",
+    },
+    {
+        "Market": "Sydney",
+        "Timezone": "Australia/Sydney",
+        "Typical session": "10:00 AM - 4:00 PM",
+        "Open": "10:00",
+        "Close": "16:00",
+        "Beginner read": "Australia cash market reference.",
+    },
 ]
 
 DEMO_PROFILES: list[dict[str, Any]] = [
@@ -3032,18 +3104,47 @@ def render_source_brief(analysis: dict[str, Any], chart_source: str | None = Non
         st.caption(source_explanation(chart_label))
 
 
+def clock_minutes(value: Any) -> int | None:
+    try:
+        hour, minute = str(value).split(":", 1)
+        return int(hour) * 60 + int(minute)
+    except (TypeError, ValueError):
+        return None
+
+
+def market_clock_state(local: pd.Timestamp, item: dict[str, Any]) -> str:
+    if local.weekday() >= 5:
+        return "Weekend"
+    minutes = int(local.hour) * 60 + int(local.minute)
+    open_minutes = clock_minutes(item.get("Open"))
+    close_minutes = clock_minutes(item.get("Close"))
+    premarket_minutes = clock_minutes(item.get("Premarket"))
+    after_hours_minutes = clock_minutes(item.get("After hours"))
+
+    if open_minutes is None or close_minutes is None:
+        return "Check session"
+    if premarket_minutes is not None and premarket_minutes <= minutes < open_minutes:
+        return "Premarket"
+    if open_minutes <= minutes < close_minutes:
+        return "Regular session"
+    if after_hours_minutes is not None and close_minutes <= minutes < after_hours_minutes:
+        return "After-hours"
+    return "Closed"
+
+
 def market_clock_frame() -> pd.DataFrame:
     rows = []
     now_utc = pd.Timestamp.now(tz="UTC")
     for item in MARKET_CLOCKS:
         local = now_utc.tz_convert(item["Timezone"])
-        weekday_open = local.weekday() < 5
+        state = market_clock_state(local, item)
         rows.append(
             {
                 "Market": item["Market"],
                 "Local time": local.strftime("%a %I:%M %p"),
+                "State": state,
                 "Typical session": item["Typical session"],
-                "Weekday": "Open day" if weekday_open else "Weekend",
+                "Beginner read": item.get("Beginner read", "Typical session reference."),
             }
         )
     return pd.DataFrame(rows)
@@ -9005,15 +9106,40 @@ def live_tracker_frame(tickers: tuple[str, ...], include_scan: bool = True) -> p
     return df.sort_values(["_rank", "Daily gain %", "RVOL"], ascending=[True, False, False]).drop(columns=["_rank"])
 
 
+def clear_live_market_caches() -> None:
+    live_cache_functions = (
+        live_tracker_frame,
+        run_scan,
+        broad_market_scan,
+        default_scan,
+        analyze_ticker,
+        load_history,
+        live_quote_stats,
+        finnhub_quote_stats,
+        yahoo_quote_stats,
+        biggest_stock_news,
+        finnhub_company_news,
+        finnhub_market_news,
+    )
+    for cached_function in live_cache_functions:
+        clear = getattr(cached_function, "clear", None)
+        if clear is not None:
+            clear()
+
+
 def show_tracker_table(df: pd.DataFrame) -> None:
     if df.empty:
         st.info("No live rows returned yet. Free data may be rate-limiting or the current filters may be too tight.")
         return
 
-    st.dataframe(
+    st.caption("Select a row to make that stock active in Charts, AI Coach, and Trade Desk.")
+    event = st.dataframe(
         df,
         width="stretch",
         hide_index=True,
+        key="live_tracker_table",
+        on_select="rerun",
+        selection_mode="single-row",
         column_config={
             "Ticker": st.column_config.TextColumn("Stock", pinned=True),
             "Status": st.column_config.TextColumn("Status"),
@@ -9030,11 +9156,12 @@ def show_tracker_table(df: pd.DataFrame) -> None:
             "Risk to stop %": st.column_config.NumberColumn("Risk", format="%.2f%%"),
         },
     )
+    remember_selected_ticker(df, event)
 
 
 def render_live_tracker_body(tickers: tuple[str, ...], include_scan: bool, fragment_mode: bool = False) -> None:
     if st.button(":material/refresh: Refresh now", key="live_tracker_refresh"):
-        st.cache_data.clear()
+        clear_live_market_caches()
         if fragment_mode:
             st.rerun(scope="fragment")
         else:
