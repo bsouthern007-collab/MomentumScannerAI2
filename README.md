@@ -92,7 +92,13 @@ The app includes an inline SVG brand mark and selectable AI characters: Scout, N
 
 The app also includes a floating animated companion overlay. Turn it on from the sidebar, choose Wander, Docked, or Focus mode, drag the character around the app, and use the tip button to rotate beginner-friendly reminders. This runs inside the Streamlit app/browser. A true always-on desktop pet that floats over other Windows apps would need a separate desktop wrapper.
 
-For a local Windows desktop companion, run:
+For a local Windows desktop companion, double-click:
+
+```text
+Start_Desktop_Companion.bat
+```
+
+Or run:
 
 ```text
 .venv\Scripts\python.exe desktop_companion.py

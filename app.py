@@ -117,12 +117,61 @@ AI_COMPANION_CSS = """
   min-height: 84px;
   backdrop-filter: blur(14px);
 }
+.pet-ready .pet-bubble {
+  border-color: rgba(0, 200, 5, .62);
+  box-shadow: 0 18px 48px rgba(0, 200, 5, .18), 0 18px 44px rgba(0, 0, 0, .34);
+}
+.pet-watch .pet-bubble {
+  border-color: rgba(245, 158, 11, .68);
+  box-shadow: 0 18px 48px rgba(245, 158, 11, .16), 0 18px 44px rgba(0, 0, 0, .34);
+}
+.pet-danger .pet-bubble {
+  border-color: rgba(255, 55, 95, .68);
+  box-shadow: 0 18px 48px rgba(255, 55, 95, .18), 0 18px 44px rgba(0, 0, 0, .34);
+}
 .pet-kicker {
   color: var(--pet-accent);
   font-size: 10px;
   font-weight: 900;
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+.pet-status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  min-width: 0;
+}
+.pet-status-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, .05);
+  color: var(--pet-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+.pet-status-time {
+  flex: 0 0 auto;
+  color: var(--pet-muted);
+  font-size: 10px;
+}
+.pet-ready .pet-status-pill {
+  border-color: rgba(0, 200, 5, .72);
+  color: #D9FFE5;
+}
+.pet-watch .pet-status-pill {
+  border-color: rgba(245, 158, 11, .76);
+  color: #FFF3D4;
+}
+.pet-danger .pet-status-pill {
+  border-color: rgba(255, 55, 95, .76);
+  color: #FFE1E8;
 }
 .pet-message {
   margin-top: 5px;
@@ -198,6 +247,19 @@ AI_COMPANION_CSS = """
   border-radius: 999px;
   background: #00C805;
   box-shadow: 0 0 16px color-mix(in srgb, var(--pet-accent) 65%, transparent);
+}
+.pet-watch .pet-core,
+.pet-watch .pet-eye,
+.pet-watch .pet-antenna:after {
+  background: #F59E0B;
+}
+.pet-danger .pet-core,
+.pet-danger .pet-eye,
+.pet-danger .pet-antenna:after {
+  background: #FF375F;
+}
+.pet-danger .pet-mouth {
+  border-bottom-color: #FF9CB1;
 }
 .pet-head {
   position: absolute;
@@ -399,6 +461,10 @@ export default function(component) {
   const name = data.name || "Scout"
   const accent = data.accent || "#38BDF8"
   const mode = data.motion || "Wander"
+  const status = data.status || "Watching"
+  const updated = data.updated || ""
+  const moodValue = String(data.mood || "neutral").toLowerCase()
+  const safeMood = ["ready", "watch", "danger", "neutral"].includes(moodValue) ? moodValue : "neutral"
   const messages = Array.isArray(data.messages) && data.messages.length
     ? data.messages
     : [`${name} is watching your paper-trading workflow.`]
@@ -413,9 +479,12 @@ export default function(component) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;")
   const message = messages[Math.floor(Date.now() / 9000) % messages.length]
-  const shellClass = ["pet-shell"]
+  const shellClass = ["pet-shell", `pet-${safeMood}`]
   if (mode === "Wander") shellClass.push("pet-wander")
   if (mode === "Focus") shellClass.push("pet-focus")
+  const updatedMarkup = updated
+    ? `<span class="pet-status-time">${escapeHtml(updated)}</span>`
+    : ""
 
   root.innerHTML = `
     <div class="${shellClass.join(" ")}" style="--pet-accent: ${accent};">
@@ -439,6 +508,10 @@ export default function(component) {
       </div>
       <div class="pet-bubble">
         <div class="pet-kicker">${escapeHtml(name)} AI companion</div>
+        <div class="pet-status-row">
+          <span class="pet-status-pill">${escapeHtml(status)}</span>
+          ${updatedMarkup}
+        </div>
         <div class="pet-message">${escapeHtml(message)}</div>
         <div class="pet-controls">
           <button class="pet-control pet-next" type="button" title="Next tip">tip</button>
@@ -4119,17 +4192,36 @@ def render_companion_picker() -> None:
         )
 
 
+def companion_status_mood(status: str) -> str:
+    if status in {"Breakout trigger", "In buy zone"}:
+        return "ready"
+    if status in {"Below stop", "No quote"}:
+        return "danger"
+    if status in {"Near buy zone", "Momentum active"}:
+        return "watch"
+    return "neutral"
+
+
 def remember_companion_analysis(analysis: dict[str, Any] | None) -> None:
     if not analysis:
         return
+    status = live_status(analysis)
+    confidence = data_confidence_summary(analysis)
+    mood = companion_status_mood(status)
+    if safe_float(confidence.get("score"), 0) < 45:
+        mood = "danger"
+    elif safe_float(confidence.get("score"), 0) < 65 and mood == "neutral":
+        mood = "watch"
     st.session_state["companion_latest_analysis"] = {
         "Ticker": str(analysis.get("Ticker") or "Stock"),
-        "Status": live_status(analysis),
+        "Status": status,
         "Entry trigger": str(analysis.get("Entry trigger") or "entry trigger"),
         "Stop": str(analysis.get("Stop") or "planned stop"),
         "Target 1": str(analysis.get("Target 1") or "target 1"),
-        "Data confidence": str(data_confidence_summary(analysis).get("label", "data check")),
+        "Data confidence": str(confidence.get("label", "data check")),
         "Playbook fit": str(analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score")))),
+        "Mood": mood,
+        "Updated": datetime.now().strftime("%I:%M:%S %p"),
     }
 
 
@@ -4144,8 +4236,9 @@ def companion_overlay_messages(profile: dict[str, str]) -> list[str]:
         target = str(latest.get("Target 1", "target 1"))
         confidence = str(latest.get("Data confidence", "data check"))
         fit = str(latest.get("Playbook fit", "setup check"))
+        updated = str(latest.get("Updated", "now"))
         return [
-            f"{ticker}: {status}. Use {entry}, {stop}, and {target} as the paper-trade map.",
+            f"{ticker}: {status}. Updated {updated}. Use {entry}, {stop}, and {target} as the paper-trade map.",
             f"{name} check: data confidence is {confidence}. Verify fast moves before trusting the number.",
             f"{ticker} fit: {fit}. If the setup is not clean, keep scanning instead of forcing a trade.",
             f"Paper rule: approve only after entry, stop, target, news, volume, and spread all make sense.",
@@ -4165,6 +4258,8 @@ def render_floating_companion() -> None:
     profile = companion_profile()
     enabled = bool(st.session_state.get("ai_companion_enabled", True))
     motion = str(st.session_state.get("ai_companion_motion", "Wander"))
+    latest = st.session_state.get("companion_latest_analysis")
+    latest = latest if isinstance(latest, dict) else {}
     AI_COMPANION_COMPONENT(
         key="floating_ai_companion",
         data={
@@ -4173,6 +4268,9 @@ def render_floating_companion() -> None:
             "accent": profile["accent"],
             "tagline": profile["tagline"],
             "motion": motion,
+            "status": str(latest.get("Status", "Watching")),
+            "mood": str(latest.get("Mood", "neutral")),
+            "updated": str(latest.get("Updated", "")),
             "messages": companion_overlay_messages(profile),
         },
         height=1,
@@ -4410,6 +4508,7 @@ def render_workflow_cockpit(
     chart_source: str | None = None,
     context: str = "workflow",
 ) -> None:
+    remember_companion_analysis(analysis)
     cockpit = workflow_cockpit_data(analysis, chart_source)
     step_parts = ['<div class="msa-cockpit-grid">']
     for index, step in enumerate(cockpit["steps"], start=1):
@@ -4819,6 +4918,7 @@ def render_html_list(title: str, items: list[str]) -> str:
 
 
 def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None = None) -> None:
+    remember_companion_analysis(analysis)
     label, message = ai_action_summary(analysis)
     status = live_status(analysis)
     math_data = ai_trade_math(analysis)
@@ -4905,6 +5005,7 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
 
 
 def render_trade_readiness_panel(analysis: dict[str, Any]) -> None:
+    remember_companion_analysis(analysis)
     label, message = ai_action_summary(analysis)
     status = live_status(analysis)
     checks = setup_check_items(analysis)
@@ -7778,6 +7879,7 @@ def render_chart_panel(
             print(f"[chart-panel] direct live retry failed for {ticker} {period}/{interval}: {exc}", flush=True)
 
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=prefer_live)
+    remember_companion_analysis(analysis)
 
     chart_quality, chart_color = data_quality_badge(source)
     st.badge(f"Chart source: {chart_quality}", icon=":material/candlestick_chart:", color=chart_color)
