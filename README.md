@@ -104,7 +104,7 @@ Or run:
 .venv\Scripts\python.exe desktop_companion.py
 ```
 
-That opens a small always-on-top companion you can drag around your PC. Right-click cycles Scout, Null, Nova, and Flux. Space changes the tip. Esc closes it.
+That opens a small always-on-top companion you can drag around your PC. When the Streamlit app has loaded a stock setup, the desktop companion reads the latest local status from `data/companion_status.json` and shows the stock status, entry, stop, target, and data-confidence reminders. Right-click cycles Scout, Null, Nova, and Flux. Space changes the tip. Double-click hides or shows the bubble. Esc closes it.
 
 ## Paper approval gate
 

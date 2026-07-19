@@ -615,6 +615,7 @@ AI_COMPANION_COMPONENT = st.components.v2.component(
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 JOURNAL_FILE = DATA_DIR / "trade_journal.csv"
 ORDERS_FILE = DATA_DIR / "paper_orders.csv"
+COMPANION_STATUS_FILE = DATA_DIR / "companion_status.json"
 YFINANCE_CACHE_DIR = DATA_DIR / "yfinance_cache"
 LIVE_REFRESH_SECONDS = 30
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
@@ -4212,7 +4213,8 @@ def remember_companion_analysis(analysis: dict[str, Any] | None) -> None:
         mood = "danger"
     elif safe_float(confidence.get("score"), 0) < 65 and mood == "neutral":
         mood = "watch"
-    st.session_state["companion_latest_analysis"] = {
+    profile = companion_profile()
+    latest = {
         "Ticker": str(analysis.get("Ticker") or "Stock"),
         "Status": status,
         "Entry trigger": str(analysis.get("Entry trigger") or "entry trigger"),
@@ -4222,7 +4224,15 @@ def remember_companion_analysis(analysis: dict[str, Any] | None) -> None:
         "Playbook fit": str(analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score")))),
         "Mood": mood,
         "Updated": datetime.now().strftime("%I:%M:%S %p"),
+        "Companion": str(profile["name"]),
+        "Accent": str(profile["accent"]),
+        "Tagline": str(profile["tagline"]),
     }
+    st.session_state["companion_latest_analysis"] = latest
+    try:
+        COMPANION_STATUS_FILE.write_text(json.dumps(latest, indent=2), encoding="utf-8")
+    except OSError as exc:
+        st.session_state["companion_status_write_error"] = str(exc)
 
 
 def companion_overlay_messages(profile: dict[str, str]) -> list[str]:
