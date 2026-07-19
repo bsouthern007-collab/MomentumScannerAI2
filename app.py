@@ -4913,7 +4913,7 @@ def lightweight_chart_payload(
             {
                 "time": candle_time,
                 "value": max(float(row.get("Volume", 0) or 0), 0),
-                "color": "rgba(0, 200, 5, 0.42)" if close_price >= open_price else "rgba(255, 55, 95, 0.38)",
+                "color": "rgba(0, 200, 5, 0.50)" if close_price >= open_price else "rgba(255, 55, 95, 0.48)",
             }
         )
 
@@ -4968,7 +4968,7 @@ def lightweight_chart_payload(
                     "position": "belowBar",
                     "color": up,
                     "shape": "arrowUp",
-                    "text": "Entry",
+                    "text": "Buy",
                 }
             )
         elif show_ai_signals and status == "Below stop":
@@ -4990,9 +4990,9 @@ def lightweight_chart_payload(
         }
 
     level_summary = [
-        {"label": "Entry", "value": money(levels["entry"]), "tone": "up", "detail": "trigger"},
-        {"label": "SL", "value": money(levels["stop"]), "tone": "down", "detail": "invalid"},
-        {"label": "TP", "value": money(levels["target_1"]), "tone": "up", "detail": "trim"},
+        {"label": "Buy", "value": money(levels["entry"]), "tone": "up", "detail": "AI entry"},
+        {"label": "Stop", "value": money(levels["stop"]), "tone": "down", "detail": "risk line"},
+        {"label": "TP1", "value": money(levels["target_1"]), "tone": "up", "detail": "first sell"},
         {"label": "TP2", "value": money(levels["target_2"]), "tone": "up", "detail": "runner"},
     ]
 
@@ -5013,6 +5013,7 @@ def lightweight_chart_payload(
         "levelSummary": level_summary if show_plan_levels else [],
         "visibleCount": int(visible_candles or min(len(candles), 60)),
         "activeEndIndex": int(active_end_index),
+        "lastTime": int(candles[active_end_index]["time"]) if candles else None,
         "palette": palette,
         "status": live_status(analysis),
     }
@@ -5029,7 +5030,7 @@ def render_lightweight_trading_chart(
     if not payload["candles"]:
         return False
 
-    chart_height = max(height + 190, 660)
+    chart_height = max(height + 230, 710)
     chart_script = lightweight_charts_script()
     chart_loader = (
         f"<script>\n{chart_script}\n</script>"
@@ -5074,6 +5075,24 @@ def render_lightweight_trading_chart(
     <canvas id="tw-wick-layer" class="tw-wick-layer" aria-hidden="true"></canvas>
     <div class="tw-watermark">__TICKER__</div>
   </div>
+  <div class="tw-footer">
+    <div class="tw-footer-buttons" aria-label="Calendar range buttons">
+      <button data-calendar-range="1D" title="Show the latest day available">1D</button>
+      <button data-calendar-range="5D" title="Show the latest five days available">5D</button>
+      <button data-calendar-range="1M" title="Show the latest month available">1M</button>
+      <button data-calendar-range="3M" title="Show the latest three months available">3M</button>
+      <button data-calendar-range="6M" title="Show the latest six months available">6M</button>
+      <button data-calendar-range="YTD" title="Show year to date">YTD</button>
+      <button data-calendar-range="1Y" title="Show the latest year available">1Y</button>
+      <button data-calendar-range="5Y" title="Show the latest five years available">5Y</button>
+      <button data-calendar-range="All" title="Fit all loaded data">All</button>
+    </div>
+    <div class="tw-footer-meta">
+      <span id="tw-clock" class="tw-footer-pill"></span>
+      <span class="tw-footer-pill">RTH</span>
+      <span class="tw-footer-pill">ADJ</span>
+    </div>
+  </div>
 </div>
 __LIGHTWEIGHT_CHARTS_LOADER__
 <script>
@@ -5088,6 +5107,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   const planbar = document.getElementById("tw-planbar");
   const status = document.getElementById("tw-status");
   const symbol = document.getElementById("tw-symbol");
+  const clock = document.getElementById("tw-clock");
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
@@ -5110,7 +5130,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     payload.timeframe || "",
     payload.exchange || "",
     payload.status || ""
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean).join(" - ");
   if (payload.levelSummary && payload.levelSummary.length) {
     planbar.innerHTML = payload.levelSummary.map((item) =>
       "<div class='tw-level-chip tw-level-" + esc(item.tone) + "'>" +
@@ -5236,7 +5256,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   });
   volumeSeries.setData(payload.volume);
   chart.priceScale("volume").applyOptions({
-    scaleMargins: { top: 0.88, bottom: 0 },
+    scaleMargins: { top: 0.80, bottom: 0 },
     visible: false
   });
 
@@ -5348,7 +5368,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
 
   const drawEnhancedBody = (x, openY, closeY, color, spacing) => {
     if (!Number.isFinite(x) || !Number.isFinite(openY) || !Number.isFinite(closeY)) return;
-    const bodyWidth = Math.max(3.2, Math.min(16, spacing * 0.72));
+    const bodyWidth = spacing >= 5 ? Math.max(4.2, Math.min(18, spacing * 0.78)) : Math.max(2.6, spacing * 0.86);
     const left = Math.round(x - bodyWidth / 2) + 0.5;
     const top = Math.round(Math.min(openY, closeY)) + 0.5;
     const bodyHeight = Math.max(Math.abs(closeY - openY), 2.8);
@@ -5368,7 +5388,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     const size = resizeWickCanvas();
     wickContext.clearRect(0, 0, size.width, size.height);
     const spacing = visibleSpacing(size);
-    const wickWidth = spacing >= 18 ? 3.1 : spacing >= 10 ? 2.45 : spacing >= 6 ? 1.9 : 1.45;
+    const wickWidth = spacing >= 18 ? 3.2 : spacing >= 10 ? 2.55 : spacing >= 6 ? 2.05 : 1.65;
     drawBuyZone(size);
     const range = chart.timeScale().getVisibleLogicalRange();
     const from = Math.max(0, Math.floor((range ? range.from : 0) - 8));
@@ -5419,10 +5439,24 @@ __LIGHTWEIGHT_CHARTS_LOADER__
 
   const rangeButtons = Array.from(document.querySelectorAll(".tw-buttons button"));
   const navButtons = Array.from(document.querySelectorAll(".tw-nav-buttons button"));
+  const footerButtons = Array.from(document.querySelectorAll(".tw-footer button[data-calendar-range]"));
   let activeRange = String(Math.min(payload.visibleCount || 90, payload.candles.length));
   const maxIndex = () => Math.max(payload.candles.length - 1, 0);
   const markActive = (range) => {
     rangeButtons.forEach((button) => button.classList.toggle("active", button.dataset.range === String(range)));
+  };
+  const markFooterActive = (range) => {
+    footerButtons.forEach((button) => button.classList.toggle("active", button.dataset.calendarRange === String(range)));
+  };
+  const updateClock = () => {
+    if (!clock) return;
+    clock.textContent = new Date().toLocaleTimeString("en-US", {
+      timeZone: "UTC",
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }) + " UTC";
   };
   const clampLogicalRange = (from, to) => {
     const min = -8;
@@ -5451,6 +5485,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
       chart.timeScale().fitContent();
       chart.timeScale().applyOptions({ barSpacing: 7, minBarSpacing: 3 });
       markActive("all");
+      markFooterActive("");
       requestAnimationFrame(drawWicks);
       return;
     }
@@ -5464,6 +5499,43 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     const start = Math.max(anchor - count + 1, 0);
     applyLogicalRange(start, end);
     markActive(String(range));
+    markFooterActive("");
+  };
+  const setCalendarRange = (range) => {
+    const label = String(range);
+    const lastIndex = Math.min(Math.max(Number(payload.activeEndIndex ?? maxIndex()), 0), maxIndex());
+    const lastCandle = payload.candles[lastIndex] || payload.candles[maxIndex()];
+    const lastTime = Number(lastCandle ? lastCandle.time : payload.lastTime);
+    if (!Number.isFinite(lastTime)) return;
+    if (label === "All") {
+      activeRange = "calendar-All";
+      chart.timeScale().fitContent();
+      chart.timeScale().applyOptions({ barSpacing: 6, minBarSpacing: 2.5 });
+      markActive("");
+      markFooterActive(label);
+      requestAnimationFrame(drawWicks);
+      return;
+    }
+    const dayMap = { "1D": 1, "5D": 5, "1M": 31, "3M": 93, "6M": 186, "1Y": 365, "5Y": 1825 };
+    let cutoffTime = lastTime - Number(dayMap[label] || 1) * 86400;
+    if (label === "YTD") {
+      const lastDate = new Date(lastTime * 1000);
+      cutoffTime = Date.UTC(lastDate.getUTCFullYear(), 0, 1) / 1000;
+    }
+    let firstIndex = payload.candles.findIndex((bar) => Number(bar.time) >= cutoffTime);
+    if (firstIndex < 0) firstIndex = 0;
+    const available = Math.max(lastIndex - firstIndex + 1, 1);
+    const minimumBars = label === "1D" ? Math.min(90, payload.candles.length) : Math.min(45, payload.candles.length);
+    if (available < minimumBars) {
+      firstIndex = Math.max(0, lastIndex - minimumBars + 1);
+    }
+    const span = Math.max(lastIndex - firstIndex + 1, 10);
+    const spacing = span <= 45 ? 24 : span <= 90 ? 18 : span <= 250 ? 11 : span <= 700 ? 7 : 4.5;
+    chart.timeScale().applyOptions({ barSpacing: spacing, minBarSpacing: span > 700 ? 2.2 : 3 });
+    activeRange = "calendar-" + label;
+    applyLogicalRange(firstIndex, lastIndex + 8);
+    markActive("");
+    markFooterActive(label);
   };
 
   const shiftWindow = (direction) => {
@@ -5473,6 +5545,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     const shift = span * 0.72 * Number(direction);
     applyLogicalRange(range.from + shift, range.to + shift);
     markActive("");
+    markFooterActive("");
   };
   const zoomWindow = (factor) => {
     const range = chart.timeScale().getVisibleLogicalRange();
@@ -5481,6 +5554,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     const span = Math.max((range.to - range.from) * factor, 12);
     applyLogicalRange(center - span / 2, center + span / 2);
     markActive("");
+    markFooterActive("");
   };
   rangeButtons.forEach((button) => {
     button.addEventListener("click", () => setRange(button.dataset.range));
@@ -5492,11 +5566,22 @@ __LIGHTWEIGHT_CHARTS_LOADER__
       if (action === "forward") shiftWindow(1);
       if (action === "zoom-in") zoomWindow(0.72);
       if (action === "zoom-out") zoomWindow(1.32);
-      if (action === "latest") setRange(activeRange === "all" ? Math.min(payload.visibleCount || 90, payload.candles.length) : activeRange, payload.activeEndIndex);
+      if (action === "latest") {
+        if (String(activeRange).startsWith("calendar-")) {
+          setCalendarRange(String(activeRange).replace("calendar-", ""));
+        } else {
+          setRange(activeRange === "all" ? Math.min(payload.visibleCount || 90, payload.candles.length) : activeRange, payload.activeEndIndex);
+        }
+      }
     });
+  });
+  footerButtons.forEach((button) => {
+    button.addEventListener("click", () => setCalendarRange(button.dataset.calendarRange));
   });
   container.addEventListener("dblclick", () => setRange(Math.min(payload.visibleCount || 90, payload.candles.length)));
 
+  updateClock();
+  setInterval(updateClock, 30000);
   setRange(Math.min(payload.visibleCount || 90, payload.candles.length));
   requestAnimationFrame(() => {
     chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
@@ -5518,6 +5603,8 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   }
   .tw-shell {
     height: __CHART_HEIGHT__px;
+    display: flex;
+    flex-direction: column;
     background: __PANEL__;
     border: 1px solid __BORDER__;
     border-radius: 8px;
@@ -5528,6 +5615,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
   }
   .tw-toolbar {
+    flex: 0 0 auto;
     min-height: 48px;
     display: flex;
     align-items: center;
@@ -5625,6 +5713,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   .tw-legend .up { color: __UP__; }
   .tw-legend .down { color: __DOWN__; }
   .tw-subbar {
+    flex: 0 0 auto;
     min-height: 34px;
     display: flex;
     align-items: center;
@@ -5634,6 +5723,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     background: __PANEL__;
   }
   .tw-planbar {
+    flex: 0 0 auto;
     min-height: 38px;
     display: flex;
     align-items: center;
@@ -5679,8 +5769,10 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     padding-right: 12px;
   }
   .tw-stage {
+    flex: 1 1 0;
     position: relative;
-    height: calc(100% - 122px);
+    min-height: 420px;
+    height: auto;
     background: __PANEL__;
     border-top: 1px solid rgba(148, 163, 184, 0.08);
   }
@@ -5716,8 +5808,50 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     transform: translateZ(0);
     backface-visibility: hidden;
   }
+  .tw-footer {
+    flex: 0 0 auto;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 10px;
+    border-top: 1px solid __BORDER__;
+    background: __PANEL__;
+  }
+  .tw-footer-buttons,
+  .tw-footer-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .tw-footer button {
+    border: 0;
+    background: transparent;
+    color: __MUTED__;
+    border-radius: 5px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 760;
+    padding: 5px 7px;
+  }
+  .tw-footer button:hover,
+  .tw-footer button.active {
+    background: rgba(59, 130, 246, 0.12);
+    color: __TEXT__;
+  }
+  .tw-footer-pill {
+    border-left: 1px solid __BORDER__;
+    color: __MUTED__;
+    font-size: 12px;
+    font-weight: 700;
+    padding-left: 8px;
+    white-space: nowrap;
+  }
   @media (max-width: 760px) {
-    .tw-toolbar, .tw-subbar, .tw-controls {
+    .tw-toolbar, .tw-subbar, .tw-controls, .tw-footer {
       align-items: flex-start;
       flex-direction: column;
     }
@@ -5731,7 +5865,11 @@ __LIGHTWEIGHT_CHARTS_LOADER__
       padding: 0 12px 8px;
     }
     .tw-stage {
-      height: calc(100% - 180px);
+      min-height: 360px;
+    }
+    .tw-footer-pill:first-child {
+      border-left: 0;
+      padding-left: 0;
     }
   }
   .tw-error {
