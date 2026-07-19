@@ -2849,6 +2849,28 @@ def stage_order_from_analysis(analysis: dict[str, Any], risk_dollars: float = 25
     }
 
 
+def order_display_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    display = df.copy()
+    if "Created" in display.columns:
+        display["Created"] = pd.to_datetime(display["Created"], errors="coerce")
+    return display
+
+
+def order_column_config() -> dict[str, Any]:
+    return {
+        "Created": st.column_config.DatetimeColumn("Created", format="MMM DD, YYYY h:mm A"),
+        "Ticker": st.column_config.TextColumn("Stock", pinned=True),
+        "Entry": st.column_config.NumberColumn("Entry", format="$%.4f"),
+        "Stop": st.column_config.NumberColumn("Stop", format="$%.4f"),
+        "Target 1": st.column_config.NumberColumn("Target 1", format="$%.4f"),
+        "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+        "Risk $": st.column_config.NumberColumn("Paper risk", format="$%.2f"),
+        "Reason": st.column_config.TextColumn("Reason"),
+    }
+
+
 def approve_paper_order(order: dict[str, Any]) -> None:
     approved = {**order, "Status": "Approved paper order", "Created": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")}
     save_order(approved)
@@ -3346,6 +3368,79 @@ def apply_style(mode: str | None = None) -> None:
         .msa-hot {{border-left: 4px solid var(--msa-orange);}}
         .msa-calm {{border-left: 4px solid var(--msa-blue);}}
         .msa-danger {{border-left: 4px solid var(--msa-down);}}
+        .msa-command-strip {{
+            display: grid;
+            grid-template-columns: minmax(280px, 1.45fr) repeat(4, minmax(130px, .72fr));
+            gap: 10px;
+            margin: 12px 0 14px 0;
+        }}
+        .msa-command-main,
+        .msa-command-stat {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            box-shadow: 0 16px 34px var(--msa-shadow);
+        }}
+        .msa-command-main {{
+            position: relative;
+            overflow: hidden;
+            padding: 14px 15px;
+        }}
+        .msa-command-main:before {{
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-left: 5px solid var(--msa-blue);
+            pointer-events: none;
+        }}
+        .msa-command-main.msa-command-ready:before {{border-left-color: var(--msa-up);}}
+        .msa-command-main.msa-command-watch:before {{border-left-color: var(--msa-orange);}}
+        .msa-command-main.msa-command-danger:before {{border-left-color: var(--msa-down);}}
+        .msa-command-kicker,
+        .msa-command-stat-label {{
+            color: var(--msa-muted-soft);
+            font-size: .68rem;
+            font-weight: 840;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+        }}
+        .msa-command-title {{
+            color: var(--msa-text);
+            font-size: 1.08rem;
+            font-weight: 900;
+            line-height: 1.1;
+            margin: 4px 0 5px 0;
+        }}
+        .msa-command-copy {{
+            color: var(--msa-muted);
+            font-size: .86rem;
+            line-height: 1.32;
+        }}
+        .msa-command-stat {{
+            padding: 12px 13px;
+            min-width: 0;
+        }}
+        .msa-command-stat-value {{
+            color: var(--msa-text);
+            font-size: 1.02rem;
+            font-weight: 880;
+            line-height: 1.1;
+            margin-top: 5px;
+            overflow-wrap: anywhere;
+        }}
+        .msa-command-stat-detail {{
+            color: var(--msa-muted);
+            font-size: .74rem;
+            line-height: 1.25;
+            margin-top: 4px;
+        }}
+        .msa-glossary-empty {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            padding: 14px;
+        }}
         .msa-provider-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -4010,6 +4105,12 @@ def apply_style(mode: str | None = None) -> None:
             .msa-hero-grid {{
                 grid-template-columns: 1fr;
                 padding: 22px;
+            }}
+            .msa-command-strip {{
+                grid-template-columns: 1fr 1fr;
+            }}
+            .msa-command-main {{
+                grid-column: 1 / -1;
             }}
             .msa-companion-inner {{
                 grid-template-columns: 72px 1fr;
@@ -4730,6 +4831,94 @@ def ai_tone(label: str, status: str) -> tuple[str, str, str]:
     if label == "In buy zone" or status in {"In buy zone", "Near buy zone", "Momentum active"}:
         return "watch", "Watch for trigger", "orange"
     return "hold", "Wait", "gray"
+
+
+def setup_command_tone(label: str, status: str, confidence_score: float | int | None) -> str:
+    tone, _, _ = ai_tone(label, status)
+    score = safe_float(confidence_score, 0) or 0
+    if score < 45:
+        return "danger"
+    if score < 65 and tone not in {"danger", "ready"}:
+        return "watch"
+    return "watch" if tone == "hold" else tone
+
+
+def setup_command_title(label: str, status: str) -> str:
+    if label == "Plan invalid" or status == "Below stop":
+        return "Stand down"
+    if label == "Trigger active" or status == "Breakout trigger":
+        return "Review approval"
+    if label == "In buy zone" or status == "In buy zone":
+        return "Wait for trigger"
+    if status in {"Near buy zone", "Momentum active"}:
+        return "Watch closely"
+    if status == "No quote":
+        return "Verify data"
+    return "Study first"
+
+
+def render_setup_command_strip(
+    analysis: dict[str, Any],
+    chart_source: str | None = None,
+    context: str = "setup",
+) -> None:
+    remember_companion_analysis(analysis)
+    label, message = ai_action_summary(analysis)
+    status = live_status(analysis)
+    confidence = data_confidence_summary(analysis, chart_source)
+    math_data = ai_trade_math(analysis)
+    passed, total = setup_completion(analysis)
+    tone = setup_command_tone(label, status, confidence.get("score"))
+    ticker = str(analysis.get("Ticker") or "Stock")
+    rr_1 = f"{math_data['rr_1']:.2f}R" if math_data["rr_1"] is not None else "n/a"
+    distance = pct(math_data["distance"]) if math_data["distance"] is not None else "wait"
+    source = str(chart_source or analysis.get("Data source", "n/a"))
+    stat_parts = [
+        ("Price / entry", f"{money(math_data['price'])} -> {money(math_data['entry'])}", f"Distance to entry: {distance}"),
+        ("Stop / risk", money(math_data["stop"]), f"Risk per share: {money(math_data['risk'])}"),
+        ("Target / reward", money(math_data["target_1"]), f"Target 1 reward/risk: {rr_1}"),
+        ("Data / checks", str(confidence["label"]), f"{passed}/{total} setup checks | {source}"),
+    ]
+    stats_html = "".join(
+        """
+        <div class="msa-command-stat">
+          <div class="msa-command-stat-label">{label}</div>
+          <div class="msa-command-stat-value">{value}</div>
+          <div class="msa-command-stat-detail">{detail}</div>
+        </div>
+        """.format(
+            label=html.escape(label_text),
+            value=html.escape(value),
+            detail=html.escape(detail),
+        )
+        for label_text, value, detail in stat_parts
+    )
+    render_html(
+        """
+        <div class="msa-command-strip">
+          <div class="msa-command-main msa-command-{tone}">
+            <div class="msa-command-kicker">{context} command</div>
+            <div class="msa-command-title">{ticker}: {title}</div>
+            <div class="msa-command-copy">{message}</div>
+          </div>
+          {stats}
+        </div>
+        """.format(
+            tone=html.escape(tone),
+            context=html.escape(context.replace("_", " ")),
+            ticker=html.escape(ticker),
+            title=html.escape(setup_command_title(label, status)),
+            message=html.escape(message),
+            stats=stats_html,
+        ),
+    )
+    with st.container(horizontal=True):
+        if context == "charts":
+            st.link_button("Open Trade Desk", "/Trade_Desk", icon=":material/order_approve:", type="primary" if tone == "ready" else "secondary", width="stretch")
+        else:
+            st.link_button("Open Charts", "/Charts", icon=":material/candlestick_chart:", width="stretch")
+        st.link_button("Study AI ladder", "/Learn?track=AI%20ladder", icon=":material/school:", width="stretch")
+        st.link_button("Open Journal", "/Journal", icon=":material/edit_note:", width="stretch")
 
 
 def ai_now_steps(analysis: dict[str, Any], label: str, status: str) -> list[str]:
@@ -7899,6 +8088,7 @@ def render_chart_panel(
             icon=":material/wifi_off:",
         )
 
+    render_setup_command_strip(analysis, source, context="charts")
     render_candlestick_chart(history, analysis, max_candles=max_candles)
     st.caption(
         f"Chart source: {source}. Last screen refresh: {datetime.now().strftime('%I:%M:%S %p')}. "
@@ -8468,6 +8658,7 @@ def page_ai_coach() -> None:
     history, source = load_history(ticker, period=period, interval="1d", prefer_live=prefer_live)
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=prefer_live)
     render_source_brief(analysis, source)
+    render_setup_command_strip(analysis, source, context="ai_coach")
     render_workflow_cockpit(analysis, source, context="ai_coach")
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
@@ -8531,6 +8722,7 @@ def page_watchlist() -> None:
     if study_ticker:
         st.subheader(f"{study_ticker} study plan")
         study_analysis = analyze_ticker(study_ticker, prefer_live=prefer_live)
+        render_setup_command_strip(study_analysis, str(study_analysis.get("Data source", "n/a")), context="watchlist")
         render_beginner_stock_summary(study_analysis, str(study_analysis.get("Data source", "n/a")))
         render_plan_card(study_analysis)
         render_news_items(finnhub_company_news(study_ticker, days=5, limit=5))
@@ -8553,6 +8745,7 @@ def page_trade_desk() -> None:
     history, source = load_history(ticker, period=period, interval=interval, prefer_live=True)
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=True)
     render_source_brief(analysis, source)
+    render_setup_command_strip(analysis, source, context="trade_desk")
     render_workflow_cockpit(analysis, source, context="trade_desk")
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
@@ -8561,7 +8754,12 @@ def page_trade_desk() -> None:
     order = stage_order_from_analysis(analysis, risk_dollars=risk_dollars)
     with st.container(border=True):
         st.markdown("**Staged order**")
-        st.dataframe(pd.DataFrame([order]), width="stretch", hide_index=True)
+        st.dataframe(
+            order_display_frame(pd.DataFrame([order])),
+            width="stretch",
+            hide_index=True,
+            column_config=order_column_config(),
+        )
         approval_ready = render_paper_approval_gate(analysis, order, source, risk_dollars)
         confirm = st.checkbox(
             "I approve this paper trade plan and understand it is not financial advice.",
@@ -8578,7 +8776,13 @@ def page_trade_desk() -> None:
     if orders.empty:
         st.info("No approved paper orders yet.")
     else:
-        st.dataframe(orders.sort_values("Created", ascending=False), width="stretch", hide_index=True)
+        order_history = order_display_frame(orders).sort_values("Created", ascending=False)
+        st.dataframe(
+            order_history,
+            width="stretch",
+            hide_index=True,
+            column_config=order_column_config(),
+        )
 
 
 def page_journal() -> None:
@@ -9408,7 +9612,83 @@ def page_learn() -> None:
                 {"Term": "Pattern day trader rule", "Meaning": "A broker/margin-account rule that can apply to frequent day trading.", "Why it matters": "Real traders must check broker rules before day trading with margin."},
             ]
         )
-        st.dataframe(terms, width="stretch", hide_index=True)
+        order_terms = {"Order ticket", "Market order", "Limit order", "Stop order", "Stop-limit order", "Bid", "Ask", "Spread", "Time in force"}
+        data_terms = {"IEX feed", "SIP feed", "Delayed quote", "Data confidence", "Data check"}
+        workflow_terms = {"Paper trade", "Approval checklist", "Market pulse", "Workflow cockpit", "AI ladder", "Setup check"}
+        scanner_terms = {"Premarket", "After-hours", "Gapper", "Float", "RVOL", "Liquidity", "Slippage"}
+        chart_terms = {"VWAP", "Support", "Resistance", "Breakout", "Pullback", "Consolidation", "Entry trigger", "Stop", "Target", "Trim", "Runner", "R multiple"}
+        news_terms = {"Halt", "Offering", "Dilution", "Short interest", "Easy to borrow"}
+        account_terms = {"Margin account", "Cash account", "Settlement", "Pattern day trader rule"}
+
+        def glossary_category(term: str) -> str:
+            if term in order_terms:
+                return "Orders"
+            if term in data_terms:
+                return "Data"
+            if term in workflow_terms:
+                return "Workflow"
+            if term in scanner_terms:
+                return "Scanner"
+            if term in chart_terms:
+                return "Charts"
+            if term in news_terms:
+                return "News"
+            if term in account_terms:
+                return "Accounts"
+            return "Basics"
+
+        terms.insert(0, "Category", terms["Term"].map(glossary_category))
+        categories = ["All", "Basics", "Orders", "Data", "Workflow", "Scanner", "Charts", "News", "Accounts"]
+        with st.container(border=True):
+            st.markdown("**Glossary search**")
+            cols = st.columns([1, 1.4], vertical_alignment="bottom")
+            category = cols[0].segmented_control("Category", categories, default="All", key="learn_glossary_category")
+            query = cols[1].text_input(
+                "Search terms",
+                value="",
+                placeholder="Try stop, VWAP, spread, PDT, data, risk",
+                key="learn_glossary_search",
+            )
+            filtered_terms = terms.copy()
+            if category and category != "All":
+                filtered_terms = filtered_terms[filtered_terms["Category"] == str(category)]
+            query_text = str(query or "").strip().lower()
+            if query_text:
+                searchable = (
+                    filtered_terms["Term"].astype(str)
+                    + " "
+                    + filtered_terms["Meaning"].astype(str)
+                    + " "
+                    + filtered_terms["Why it matters"].astype(str)
+                ).str.lower()
+                filtered_terms = filtered_terms[searchable.str.contains(query_text, regex=False, na=False)]
+
+            focus_source = filtered_terms if not filtered_terms.empty else terms
+            focus_index = datetime.now().timetuple().tm_yday % len(focus_source)
+            focus = focus_source.iloc[focus_index]
+            focus_cols = st.columns([.42, .58])
+            with focus_cols[0]:
+                st.metric("Terms shown", str(len(filtered_terms)), f"{len(terms)} total", border=True)
+                st.badge(str(focus["Category"]), icon=":material/category:", color="blue")
+            with focus_cols[1]:
+                st.markdown(f"**Focus term: {focus['Term']}**")
+                st.write(str(focus["Meaning"]))
+                st.caption(str(focus["Why it matters"]))
+
+            if filtered_terms.empty:
+                render_html('<div class="msa-glossary-empty">No terms matched that search. Try a shorter word like stop, order, data, news, or risk.</div>')
+            else:
+                st.dataframe(
+                    filtered_terms,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Category": st.column_config.TextColumn("Category", pinned=True),
+                        "Term": st.column_config.TextColumn("Term"),
+                        "Meaning": st.column_config.TextColumn("Plain-English meaning"),
+                        "Why it matters": st.column_config.TextColumn("Why it matters"),
+                    },
+                )
 
     elif track == "iPad":
         cols = st.columns(2)
