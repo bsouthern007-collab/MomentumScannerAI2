@@ -2511,6 +2511,127 @@ def apply_style(mode: str | None = None) -> None:
             line-height: 1.35;
             margin-top: 8px;
         }}
+        .msa-cockpit {{
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(34, 211, 238, 0.10), transparent 34%),
+                linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            box-shadow: 0 18px 42px var(--msa-shadow);
+            padding: 15px;
+            margin: 10px 0 14px 0;
+        }}
+        .msa-cockpit-head {{
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) minmax(240px, 1.45fr);
+            gap: 12px;
+            align-items: stretch;
+            margin-bottom: 12px;
+        }}
+        .msa-cockpit-kicker {{
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }}
+        .msa-cockpit-title {{
+            color: var(--msa-text);
+            font-size: clamp(1.45rem, 2.8vw, 2.1rem);
+            font-weight: 880;
+            line-height: 1.04;
+            margin-top: 5px;
+        }}
+        .msa-cockpit-detail {{
+            color: var(--msa-muted);
+            font-size: .88rem;
+            line-height: 1.34;
+            margin-top: 7px;
+        }}
+        .msa-cockpit-next {{
+            border: 1px solid var(--msa-border);
+            border-left: 4px solid var(--msa-blue);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            padding: 12px 13px;
+        }}
+        .msa-cockpit-next-ready {{border-left-color: var(--msa-up);}}
+        .msa-cockpit-next-watch {{border-left-color: var(--msa-orange);}}
+        .msa-cockpit-next-danger {{border-left-color: var(--msa-down);}}
+        .msa-cockpit-next-title {{
+            color: var(--msa-text);
+            font-size: 1.1rem;
+            font-weight: 840;
+            line-height: 1.08;
+        }}
+        .msa-cockpit-next-copy {{
+            color: var(--msa-muted);
+            font-size: .84rem;
+            line-height: 1.32;
+            margin-top: 7px;
+        }}
+        .msa-cockpit-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+            gap: 9px;
+        }}
+        .msa-cockpit-step {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            padding: 11px 12px;
+            min-height: 116px;
+        }}
+        .msa-cockpit-ready {{border-top: 4px solid var(--msa-up);}}
+        .msa-cockpit-watch {{border-top: 4px solid var(--msa-orange);}}
+        .msa-cockpit-danger {{border-top: 4px solid var(--msa-down);}}
+        .msa-cockpit-neutral {{border-top: 4px solid var(--msa-blue);}}
+        .msa-cockpit-step-top {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }}
+        .msa-cockpit-step-number {{
+            display: grid;
+            place-items: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 999px;
+            background: var(--msa-panel-alt);
+            border: 1px solid var(--msa-border);
+            color: var(--msa-muted-soft);
+            font-size: .78rem;
+            font-weight: 820;
+        }}
+        .msa-cockpit-step-state {{
+            color: var(--msa-muted-soft);
+            font-size: .68rem;
+            font-weight: 780;
+            text-transform: uppercase;
+        }}
+        .msa-cockpit-step-title {{
+            color: var(--msa-text);
+            font-weight: 840;
+            line-height: 1.08;
+            margin-top: 8px;
+        }}
+        .msa-cockpit-step-detail {{
+            color: var(--msa-muted);
+            font-size: .78rem;
+            line-height: 1.25;
+            margin-top: 6px;
+        }}
+        .msa-cockpit-blockers {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            padding: 10px 12px;
+            line-height: 1.35;
+            margin-top: 10px;
+        }}
         .msa-level-board {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2887,6 +3008,9 @@ def apply_style(mode: str | None = None) -> None:
             line-height: 1.34;
         }}
         @media (max-width: 900px) {{
+            .msa-cockpit-head {{
+                grid-template-columns: 1fr;
+            }}
             .msa-readiness-command {{
                 grid-template-columns: 1fr;
             }}
@@ -2962,6 +3086,175 @@ def render_setup_checks(analysis: dict[str, Any]) -> None:
                 icon=":material/check_circle:" if ok else ":material/radio_button_unchecked:",
                 color="green" if ok else "orange",
             )
+
+
+def workflow_cockpit_data(analysis: dict[str, Any], chart_source: str | None = None) -> dict[str, Any]:
+    label, _ = ai_action_summary(analysis)
+    status = live_status(analysis)
+    confidence = data_confidence_summary(analysis, chart_source)
+    math_data = ai_trade_math(analysis)
+    passed, total = setup_completion(analysis)
+    ticker = str(analysis.get("Ticker", "Stock"))
+    fit = str(analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score"))))
+    rr_1 = math_data["rr_1"]
+    risk = math_data["risk"]
+    entry = math_data["entry"]
+    stop = math_data["stop"]
+
+    data_tone = "ready" if confidence["score"] >= 65 else "watch" if confidence["score"] >= 45 else "danger"
+    setup_tone = "ready" if passed >= max(total - 1, 1) else "watch" if passed >= max(total - 3, 1) else "danger"
+    chart_tone = "ready" if status in {"Breakout trigger", "In buy zone"} else "watch" if status in {"Near buy zone", "Momentum active", "Watching"} else "danger"
+    risk_tone = "ready" if rr_1 is not None and rr_1 >= 1.4 and risk is not None and risk > 0 else "watch"
+    plan_tone = "ready" if label == "Trigger active" and data_tone == "ready" and risk_tone == "ready" else "watch"
+    journal_tone = "neutral"
+
+    if confidence["score"] < 45:
+        next_title = "Verify data before anything else"
+        next_copy = "The quote source or age is weak. Use Charts and another quote source before trusting this as even a paper setup."
+        next_tone = "danger"
+        next_link = ("/Charts", "Open Charts", ":material/candlestick_chart:")
+    elif status == "Below stop" or label == "Plan invalid":
+        next_title = "Stand down and rebuild"
+        next_copy = "The setup is below its risk line. Treat the old entry and targets as expired until fresh candles rebuild the plan."
+        next_tone = "danger"
+        next_link = ("/Market_Scan", "Find another stock", ":material/radar:")
+    elif passed < max(total - 2, 1):
+        next_title = "Keep scanning"
+        next_copy = "Too many rules are missing. Use Market Scan or Scanner to find a cleaner stock before staging a paper plan."
+        next_tone = "watch"
+        next_link = ("/Market_Scan", "Open Market Scan", ":material/radar:")
+    elif status in {"Breakout trigger", "In buy zone"} and rr_1 is not None and rr_1 >= 1.4:
+        next_title = "Review paper approval"
+        next_copy = "The idea is close enough for a careful paper-trade review. Confirm news, spread, candle strength, and max risk first."
+        next_tone = "ready"
+        next_link = ("/Trade_Desk", "Open Trade Desk", ":material/order_approve:")
+    elif status in {"Near buy zone", "Momentum active", "Watching"}:
+        next_title = "Watch the chart, do not chase"
+        next_copy = "The stock needs either a cleaner pullback or a trigger break. Keep the chart open and wait for the level."
+        next_tone = "watch"
+        next_link = ("/Charts", "Open Charts", ":material/candlestick_chart:")
+    else:
+        next_title = "Use it as a study idea"
+        next_copy = "This can still teach the workflow, but it is not an active paper-trade review yet."
+        next_tone = "neutral"
+        next_link = ("/Learn?track=AI%20ladder", "Study AI ladder", ":material/school:")
+
+    steps = [
+        {
+            "title": "Stock found",
+            "state": ticker,
+            "detail": f"Fit: {fit}. AI read: {label}.",
+            "tone": "ready" if ticker and ticker != "Stock" else "watch",
+        },
+        {
+            "title": "Data verified",
+            "state": str(confidence["label"]),
+            "detail": f"{confidence['score']}/100 confidence. Age: {confidence['age']}.",
+            "tone": data_tone,
+        },
+        {
+            "title": "Setup rules",
+            "state": f"{passed}/{total}",
+            "detail": "Price, gap, float, RVOL, trend, risk, and status.",
+            "tone": setup_tone,
+        },
+        {
+            "title": "Chart status",
+            "state": status,
+            "detail": f"Entry {money(entry)}. Stop {money(stop)}.",
+            "tone": chart_tone,
+        },
+        {
+            "title": "Risk/reward",
+            "state": f"{rr_1:.2f}R" if rr_1 is not None else "n/a",
+            "detail": f"Risk per share {money(risk)}. Target must pay for risk.",
+            "tone": risk_tone,
+        },
+        {
+            "title": "Paper workflow",
+            "state": "approval",
+            "detail": "Stage only after the ladder is clean, then journal the result.",
+            "tone": plan_tone if next_tone == "ready" else journal_tone,
+        },
+    ]
+    blockers = [str(item) for item in analysis.get("Warnings", [])[:3]]
+    if confidence["score"] < 65:
+        blockers.insert(0, f"Data confidence is {confidence['label']}.")
+    if status == "Below stop":
+        blockers.insert(0, "Price is below the stop area.")
+    if rr_1 is not None and rr_1 < 1.4:
+        blockers.append("Target 1 reward/risk is under the preferred 1.4R threshold.")
+    return {
+        "ticker": ticker,
+        "next_title": next_title,
+        "next_copy": next_copy,
+        "next_tone": next_tone,
+        "next_link": next_link,
+        "steps": steps,
+        "blockers": list(dict.fromkeys(blockers))[:4],
+    }
+
+
+def render_workflow_cockpit(
+    analysis: dict[str, Any],
+    chart_source: str | None = None,
+    context: str = "workflow",
+) -> None:
+    cockpit = workflow_cockpit_data(analysis, chart_source)
+    step_parts = ['<div class="msa-cockpit-grid">']
+    for index, step in enumerate(cockpit["steps"], start=1):
+        step_parts.append(
+            '<div class="msa-cockpit-step msa-cockpit-{tone}">'
+            '<div class="msa-cockpit-step-top"><div class="msa-cockpit-step-number">{index}</div><div class="msa-cockpit-step-state">{state}</div></div>'
+            '<div class="msa-cockpit-step-title">{title}</div>'
+            '<div class="msa-cockpit-step-detail">{detail}</div>'
+            '</div>'.format(
+                tone=html.escape(str(step["tone"])),
+                index=index,
+                state=html.escape(str(step["state"])),
+                title=html.escape(str(step["title"])),
+                detail=html.escape(str(step["detail"])),
+            )
+        )
+    step_parts.append("</div>")
+    blocker_text = "No major workflow blockers from the current model."
+    if cockpit["blockers"]:
+        blocker_text = " ".join(f"{index}. {item}" for index, item in enumerate(cockpit["blockers"], start=1))
+
+    st.markdown(
+        """
+        <div class="msa-cockpit">
+          <div class="msa-cockpit-head">
+            <div>
+              <div class="msa-cockpit-kicker">Workflow cockpit</div>
+              <div class="msa-cockpit-title">{ticker} next move</div>
+              <div class="msa-cockpit-detail">A guided paper-trading workflow that keeps new traders in order: scan, verify, chart, plan, approve, journal.</div>
+            </div>
+            <div class="msa-cockpit-next msa-cockpit-next-{tone}">
+              <div class="msa-cockpit-kicker">Recommended next step</div>
+              <div class="msa-cockpit-next-title">{next_title}</div>
+              <div class="msa-cockpit-next-copy">{next_copy}</div>
+            </div>
+          </div>
+          {steps}
+          <div class="msa-cockpit-blockers"><b>Slow-down checks:</b> {blockers}</div>
+        </div>
+        """.format(
+            ticker=html.escape(str(cockpit["ticker"])),
+            tone=html.escape(str(cockpit["next_tone"])),
+            next_title=html.escape(str(cockpit["next_title"])),
+            next_copy=html.escape(str(cockpit["next_copy"])),
+            steps="".join(step_parts),
+            blockers=html.escape(blocker_text),
+        ),
+        unsafe_allow_html=True,
+    )
+
+    url, label, icon = cockpit["next_link"]
+    with st.container(horizontal=True):
+        st.link_button(label, url, type="primary" if cockpit["next_tone"] == "ready" else "secondary", icon=icon, width="stretch")
+        st.link_button("Study ladder", "/Learn?track=AI%20ladder", icon=":material/school:", width="stretch")
+        st.link_button("Open journal", "/Journal", icon=":material/edit_note:", width="stretch")
 
 
 def default_scan(prefer_live: bool = True) -> pd.DataFrame:
@@ -5557,6 +5850,7 @@ def render_chart_panel(
         "Free market data can be real-time or delayed depending on source, exchange, and availability."
     )
     render_source_brief(analysis, source)
+    render_workflow_cockpit(analysis, source, context="charts")
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
     render_trade_readiness_panel(analysis)
@@ -5785,6 +6079,7 @@ def page_dashboard() -> None:
             ("Top RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
+    render_workflow_cockpit(best, str(best.get("Data source", "n/a")), context="dashboard")
     render_action_queue(df, key="dashboard_action_queue")
 
     news_symbols = tuple(unique_symbols([str(item) for item in df["Ticker"].head(10).tolist()] + read_watchlist() + CORE_MARKET_TICKERS[:8]))
@@ -5836,6 +6131,7 @@ def page_daily_gameplan() -> None:
             ("RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
+    render_workflow_cockpit(best, str(best.get("Data source", "n/a")), context="daily_gameplan")
     render_action_queue(df, key="gameplan_action_queue")
     render_data_health_summary(df)
 
@@ -5889,6 +6185,7 @@ def page_scanner() -> None:
                 ("Best score", f"{int(top['AI score'])}/100", "hot"),
             ]
         )
+        render_workflow_cockpit(top, str(top.get("Data source", "n/a")), context="scanner")
         render_action_queue(df, key="scanner_action_queue")
         render_data_health_summary(df)
     show_scan_table(df, key="scanner_results_table")
@@ -5997,6 +6294,9 @@ def page_market_scan() -> None:
             ("Best gain", pct(df.iloc[0]["Daily gain %"]) if not df.empty else "n/a", "good"),
         ]
     )
+    if not df.empty:
+        top_scan = df.iloc[0].to_dict()
+        render_workflow_cockpit(top_scan, str(top_scan.get("Data source", "n/a")), context="market_scan")
     render_action_queue(df, key="market_scan_action_queue")
     render_data_health_summary(df)
 
@@ -6105,6 +6405,7 @@ def page_ai_coach() -> None:
     history, source = load_history(ticker, period=period, interval="1d", prefer_live=prefer_live)
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=prefer_live)
     render_source_brief(analysis, source)
+    render_workflow_cockpit(analysis, source, context="ai_coach")
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
     render_ai_decision_panel(analysis, source)
@@ -6189,6 +6490,7 @@ def page_trade_desk() -> None:
     history, source = load_history(ticker, period=period, interval=interval, prefer_live=True)
     analysis = rebuild_analysis_from_history(ticker, history, source, prefer_live=True)
     render_source_brief(analysis, source)
+    render_workflow_cockpit(analysis, source, context="trade_desk")
     render_price_audit_panel(ticker, history, analysis, source)
     render_beginner_stock_summary(analysis, source)
     render_ai_decision_panel(analysis, source)
@@ -6322,6 +6624,7 @@ def page_learn() -> None:
         "Routine",
         "Chart reading",
         "Risk",
+        "Workflow cockpit",
         "AI ladder",
         "Data sources",
         "News",
@@ -6389,6 +6692,7 @@ def page_learn() -> None:
                     {"Field": "Price audit", "What it means": "The app checks source, time, and whether price feeds disagree.", "Beginner move": "If it says mismatch or fallback, use the stock for study only."},
                     {"Field": "Data confidence", "What it means": "A quick trust label based on source, quote age, fallback data, and feed agreement.", "Beginner move": "High confidence is cleaner for paper practice. Verify first means slow down and check another source."},
                     {"Field": "AI score", "What it means": "A checklist score based on the app's rules.", "Beginner move": "Use it to focus your study, not as a profit promise."},
+                    {"Field": "Workflow cockpit", "What it means": "The panel that tells you the next best page/action based on the current stock.", "Beginner move": "Use it as your map: scan, verify, chart, plan, approve, journal."},
                     {"Field": "AI ladder", "What it means": "A step-by-step read of data, setup, entry, stop, and take-profit levels.", "Beginner move": "Read the ladder in order before staging any paper order."},
                     {"Field": "Entry trigger", "What it means": "The confirmation price.", "Beginner move": "Avoid guessing early. Wait for confirmation on the chart."},
                     {"Field": "Stop loss", "What it means": "Where the idea is wrong.", "Beginner move": "If this loss feels too big, reduce paper size or skip."},
@@ -6634,6 +6938,43 @@ def page_learn() -> None:
             st.write("- One planned loss is tuition. A chased loss is a habit problem.")
             st.write("- If the setup breaks the stop, the idea is invalid.")
             st.write("- If you miss the entry, wait for the next clean setup.")
+
+    elif track == "Workflow cockpit":
+        st.info(
+            "The workflow cockpit is the app's map. It shows what to do next so a beginner does not jump straight from a moving candle into a trade idea.",
+            icon=":material/route:",
+        )
+        sample_analysis = analyze_ticker("SOUN", prefer_live=False)
+        render_workflow_cockpit(sample_analysis, str(sample_analysis.get("Data source", "Learning")), context="learn_workflow")
+
+        cols = st.columns(3)
+        with cols[0]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**Read the top box first**")
+                st.write("- Recommended next step tells you where to go now.")
+                st.write("- Green means review carefully.")
+                st.write("- Orange means wait or verify.")
+                st.write("- Red means stand down or rebuild.")
+        with cols[1]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**Read the six workflow tiles**")
+                st.write("- Stock found")
+                st.write("- Data verified")
+                st.write("- Setup rules")
+                st.write("- Chart status")
+                st.write("- Risk/reward")
+                st.write("- Paper workflow")
+        with cols[2]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**Use the buttons**")
+                st.write("- Open Charts to inspect candles.")
+                st.write("- Open Trade Desk only when the setup is clean.")
+                st.write("- Open Journal after every paper decision.")
+                st.write("- Study the ladder when the terms feel unclear.")
+
+        with st.container(border=True):
+            st.markdown("**Beginner rule**")
+            st.write("If the cockpit says verify, wait, stand down, or keep scanning, that is still a decision. The best beginner trade is often no trade.")
 
     elif track == "AI ladder":
         st.info(
@@ -6916,6 +7257,7 @@ def page_learn() -> None:
                 {"Term": "SIP feed", "Meaning": "A consolidated exchange data feed across major US markets.", "Why it matters": "It is closer to full professional real-time data, but it usually costs money because exchanges charge fees."},
                 {"Term": "Delayed quote", "Meaning": "A price that may be behind the current market.", "Why it matters": "A delayed quote can make entries, stops, and targets look safer than they really are."},
                 {"Term": "Data confidence", "Meaning": "The app's trust label based on source, quote age, fallback data, and price mismatch risk.", "Why it matters": "It tells beginners when to slow down and verify before using a setup."},
+                {"Term": "Workflow cockpit", "Meaning": "The app's guided next-step panel for moving from scan to chart to plan to journal.", "Why it matters": "It keeps beginners from skipping verification and risk checks."},
                 {"Term": "AI ladder", "Meaning": "The app's step-by-step paper-trade review: data, setup, entry, stop, and take profit.", "Why it matters": "It gives beginners an order to follow instead of reacting emotionally to candles."},
                 {"Term": "Setup check", "Meaning": "A quick count of how many scanner rules are lining up.", "Why it matters": "A strong candle is not enough if the full setup is weak."},
                 {"Term": "Data check", "Meaning": "The first ladder step that checks source, quote age, and confidence.", "Why it matters": "Bad or stale data can make a paper plan look cleaner than it really is."},

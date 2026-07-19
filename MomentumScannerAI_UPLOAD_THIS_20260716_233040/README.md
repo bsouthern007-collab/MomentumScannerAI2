@@ -57,3 +57,11 @@ The AI assistant includes a five-step ladder for paper-trade review: data check,
 ```text
 /Learn?track=AI%20ladder
 ```
+
+## Workflow cockpit
+
+The app includes a guided workflow cockpit that tells users the next step for the current stock: keep scanning, verify data, watch the chart, review a paper plan, or journal the result. The Learn page includes a matching lesson at:
+
+```text
+/Learn?track=Workflow%20cockpit
+```
