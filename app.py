@@ -47,6 +47,32 @@ APP_NAME = "Trading for Dummys 101"
 DATA_DIR = APP_DIR / "data"
 ASSETS_DIR = APP_DIR / "assets"
 LIGHTWEIGHT_CHARTS_FILE = ASSETS_DIR / "lightweight-charts.standalone.production.js"
+COMPANION_PROFILES = {
+    "Scout": {
+        "asset": "companion_scout.svg",
+        "tagline": "Clean setup coach",
+        "style": "balanced",
+        "accent": "#38BDF8",
+    },
+    "Null": {
+        "asset": "companion_null.svg",
+        "tagline": "Quiet risk checker",
+        "style": "defensive",
+        "accent": "#A78BFA",
+    },
+    "Nova": {
+        "asset": "companion_nova.svg",
+        "tagline": "Catalyst and news scout",
+        "style": "curious",
+        "accent": "#22D3EE",
+    },
+    "Flux": {
+        "asset": "companion_flux.svg",
+        "tagline": "Fast momentum watcher",
+        "style": "aggressive",
+        "accent": "#F59E0B",
+    },
+}
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 JOURNAL_FILE = DATA_DIR / "trade_journal.csv"
 ORDERS_FILE = DATA_DIR / "paper_orders.csv"
@@ -2622,6 +2648,7 @@ def apply_style(mode: str | None = None) -> None:
             position: relative;
             overflow: hidden;
             border: 1px solid var(--msa-border);
+            border-top: 3px solid var(--msa-character-accent, var(--msa-blue));
             border-radius: 8px;
             background:
                 linear-gradient(135deg, rgba(0, 200, 5, .10), transparent 38%),
@@ -2650,6 +2677,9 @@ def apply_style(mode: str | None = None) -> None:
             gap: 12px;
             align-items: center;
         }}
+        .msa-companion-inner-text-only {{
+            grid-template-columns: 1fr;
+        }}
         .msa-companion-sidebar .msa-companion-inner {{
             grid-template-columns: 72px 1fr;
         }}
@@ -2661,6 +2691,37 @@ def apply_style(mode: str | None = None) -> None:
         .msa-companion-sidebar .msa-companion-bot {{
             width: 72px;
             height: 72px;
+        }}
+        .msa-companion-avatar {{
+            display: block;
+            width: 86px;
+            height: 86px;
+            object-fit: contain;
+            filter: drop-shadow(0 14px 26px rgba(0, 0, 0, .22));
+        }}
+        .msa-companion-sidebar .msa-companion-avatar {{
+            width: 72px;
+            height: 72px;
+        }}
+        .msa-companion-picker {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            padding: 10px;
+            margin: 8px 0 12px 0;
+            text-align: center;
+        }}
+        .msa-companion-picker-title {{
+            color: var(--msa-text);
+            font-size: .88rem;
+            font-weight: 860;
+            margin-top: 5px;
+        }}
+        .msa-companion-picker-copy {{
+            color: var(--msa-muted);
+            font-size: .76rem;
+            line-height: 1.25;
+            margin-top: 3px;
         }}
         .msa-companion-kicker {{
             color: var(--msa-muted-soft);
@@ -3434,26 +3495,48 @@ def brand_mark_svg() -> str:
     )
 
 
-def ai_companion_svg() -> str:
-    return clean_html_markup(
-        """
-    <svg class="msa-companion-bot" viewBox="0 0 96 96" role="img" aria-label="Scout AI companion" xmlns="http://www.w3.org/2000/svg">
-      <path d="M48 25V14" stroke="#38BDF8" stroke-width="4" stroke-linecap="round"/>
-      <circle cx="48" cy="11" r="5" fill="#00C805"/>
-      <path d="M14 45H7M89 45H82" stroke="#38BDF8" stroke-width="4" stroke-linecap="round"/>
-      <rect x="18" y="24" width="60" height="48" rx="18" fill="#101821" stroke="#38BDF8" stroke-width="3"/>
-      <rect x="27" y="34" width="42" height="23" rx="10" fill="#172232" stroke="#293546" stroke-width="2"/>
-      <circle cx="39" cy="46" r="5" fill="#00C805"/>
-      <circle cx="57" cy="46" r="5" fill="#00C805"/>
-      <path d="M36 61C42 66 54 66 60 61" stroke="#A8B3C2" stroke-width="3" fill="none" stroke-linecap="round"/>
-      <path d="M29 75H67" stroke="#293546" stroke-width="5" stroke-linecap="round"/>
-      <path d="M32 78H64" stroke="#00C805" stroke-width="2" stroke-linecap="round"/>
-    </svg>
-    """
-    )
+def companion_names() -> list[str]:
+    return list(COMPANION_PROFILES)
 
 
-def companion_copy(analysis: dict[str, Any] | None = None) -> tuple[str, str, str]:
+def selected_companion_name() -> str:
+    current = str(st.session_state.get("ai_companion", "Scout") or "Scout")
+    return current if current in COMPANION_PROFILES else "Scout"
+
+
+def companion_profile(name: str | None = None) -> dict[str, str]:
+    profile_name = name if name in COMPANION_PROFILES else selected_companion_name()
+    profile = dict(COMPANION_PROFILES[profile_name])
+    profile["name"] = profile_name
+    return profile
+
+
+def companion_asset_path(profile: dict[str, str] | None = None) -> Path:
+    active = profile or companion_profile()
+    return ASSETS_DIR / str(active["asset"])
+
+
+def companion_svg_text(profile: dict[str, str] | None = None) -> str:
+    path = companion_asset_path(profile)
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def companion_avatar_html(profile: dict[str, str] | None = None) -> str:
+    active = profile or companion_profile()
+    svg = companion_svg_text(active)
+    if not svg:
+        return ""
+    src = "data:image/svg+xml;utf8," + url_quote(svg)
+    name = html.escape(str(active["name"]))
+    return f'<img class="msa-companion-avatar" alt="{name} character" src="{src}">'
+
+
+def companion_copy(analysis: dict[str, Any] | None = None, profile: dict[str, str] | None = None) -> tuple[str, str, str]:
+    active = profile or companion_profile()
+    character = str(active["name"])
     if analysis:
         ticker = str(analysis.get("Ticker") or "Stock")
         status = live_status(analysis)
@@ -3464,58 +3547,68 @@ def companion_copy(analysis: dict[str, Any] | None = None) -> tuple[str, str, st
 
         if status == "Breakout trigger":
             return (
-                "Scout sees a trigger",
+                f"{character} sees a trigger",
                 f"{ticker} is at the planned trigger. Check volume, spread, news, and risk to {stop} before approving any paper trade.",
-                f"{ticker} - trigger active - {confidence}",
+                f"{ticker} - trigger active - {character} - {confidence}",
             )
         if status == "In buy zone":
             return (
-                "Scout sees the buy zone",
+                f"{character} sees the buy zone",
                 f"{ticker} is inside the planned zone. Wait for confirmation at {entry}; first planned trim is {target}.",
-                f"{ticker} - buy zone - {confidence}",
+                f"{ticker} - buy zone - {character} - {confidence}",
             )
         if status == "Near buy zone":
             return (
-                "Scout says wait for proof",
+                f"{character} says wait for proof",
                 f"{ticker} is close, but the cleaner plan is still confirmation at {entry} with risk controlled near {stop}.",
-                f"{ticker} - near zone - {confidence}",
+                f"{ticker} - near zone - {character} - {confidence}",
             )
         if status == "Below stop":
             return (
-                "Scout says rebuild",
+                f"{character} says rebuild",
                 f"{ticker} is below the risk line. Treat the old plan as invalid until fresh candles create a new setup.",
-                f"{ticker} - below stop - {confidence}",
+                f"{ticker} - below stop - {character} - {confidence}",
             )
         if status == "Momentum active":
             return (
-                "Scout sees momentum",
+                f"{character} sees momentum",
                 f"{ticker} has active momentum. Do not chase; use the chart to wait for the next clean trigger and defined stop.",
-                f"{ticker} - momentum - {confidence}",
+                f"{ticker} - momentum - {character} - {confidence}",
             )
         return (
-            "Scout is watching",
+            f"{character} is watching",
             f"{ticker} is on the board, but it still needs a cleaner trigger, stronger data, or better risk/reward before approval.",
-            f"{ticker} - {status} - {confidence}",
+            f"{ticker} - {status} - {character} - {confidence}",
         )
 
     selected = normalize_user_symbol(st.session_state.get("selected_ticker", ""))
     stock = selected or "your top stock"
     return (
-        "Meet Scout",
-        f"Scout follows {stock}, keeps the next step readable, and reminds beginners to verify data, entry, stop, target, and news before any paper approval.",
-        "AI companion - paper trading only",
+        f"Meet {character}",
+        f"{character} follows {stock}, keeps the next step readable, and reminds beginners to verify data, entry, stop, target, and news before any paper approval.",
+        f"{character} - {active['tagline']} - paper trading only",
     )
 
 
-def companion_card_html(title: str, message: str, chip: str, context: str = "card") -> str:
+def companion_card_html(
+    title: str,
+    message: str,
+    chip: str,
+    context: str = "card",
+    profile: dict[str, str] | None = None,
+    include_avatar: bool = True,
+) -> str:
+    active = profile or companion_profile()
     safe_context = "".join(ch for ch in str(context).lower() if ch.isalnum() or ch in {"-", "_"}) or "card"
+    avatar = companion_avatar_html(active) if include_avatar else ""
+    inner_class = "msa-companion-inner" if include_avatar else "msa-companion-inner msa-companion-inner-text-only"
     return clean_html_markup(
         """
-    <div class="msa-companion-card msa-companion-{context}">
-      <div class="msa-companion-inner">
-        {bot}
+    <div class="msa-companion-card msa-companion-{context}" style="--msa-character-accent: {accent};">
+      <div class="{inner_class}">
+        {avatar}
         <div>
-          <div class="msa-companion-kicker">AI companion</div>
+          <div class="msa-companion-kicker">AI character</div>
           <div class="msa-companion-title">{title}</div>
           <div class="msa-companion-message">{message}</div>
           <div class="msa-companion-chip">{chip}</div>
@@ -3524,7 +3617,9 @@ def companion_card_html(title: str, message: str, chip: str, context: str = "car
     </div>
     """.format(
         context=html.escape(safe_context),
-        bot=ai_companion_svg(),
+        accent=html.escape(str(active["accent"])),
+        inner_class=inner_class,
+        avatar=avatar,
         title=html.escape(title),
         message=html.escape(message),
         chip=html.escape(chip),
@@ -3532,9 +3627,32 @@ def companion_card_html(title: str, message: str, chip: str, context: str = "car
     )
 
 
-def render_companion_card(analysis: dict[str, Any] | None = None, context: str = "card") -> None:
-    title, message, chip = companion_copy(analysis)
-    render_html(companion_card_html(title, message, chip, context=context))
+def render_companion_card(analysis: dict[str, Any] | None = None, context: str = "card", include_avatar: bool = True) -> None:
+    profile = companion_profile()
+    title, message, chip = companion_copy(analysis, profile)
+    render_html(companion_card_html(title, message, chip, context=context, profile=profile, include_avatar=include_avatar))
+
+
+def render_companion_picker() -> None:
+    options = companion_names()
+    default = selected_companion_name()
+    with st.sidebar:
+        selected = st.segmented_control("Choose AI character", options, default=default, key="ai_companion")
+        profile = companion_profile(str(selected or default))
+        st.image(str(companion_asset_path(profile)), width=118)
+        st.caption(f"{profile['name']}: {profile['tagline']}")
+
+
+def render_companion_showcase(analysis: dict[str, Any] | None = None, context: str = "dashboard") -> None:
+    profile = companion_profile()
+    title, message, chip = companion_copy(analysis, profile)
+    with st.container(border=True):
+        cols = st.columns([0.22, 0.78], vertical_alignment="center")
+        with cols[0]:
+            st.image(str(companion_asset_path(profile)), width=150)
+            st.caption(f"{profile['name']} selected")
+        with cols[1]:
+            render_html(companion_card_html(title, message, chip, context=context, profile=profile, include_avatar=False))
 
 
 def render_sidebar_brand() -> None:
@@ -3555,12 +3673,14 @@ def render_sidebar_brand() -> None:
         ),
         target=st.sidebar,
     )
+    render_companion_picker()
     with st.sidebar:
-        render_companion_card(context="sidebar")
+        render_companion_card(context="sidebar", include_avatar=False)
 
 
 def dashboard_hero() -> None:
-    title, message, chip = companion_copy()
+    profile = companion_profile()
+    title, message, chip = companion_copy(profile=profile)
     render_html(
         f"""
         <div class="msa-hero">
@@ -3582,7 +3702,7 @@ def dashboard_hero() -> None:
                 <span class="msa-hero-badge">Paper approval gate</span>
               </div>
             </div>
-            {companion_card_html(title, message, chip, context="hero")}
+            {companion_card_html(title, message, chip, context="hero", profile=profile)}
           </div>
         </div>
         """
@@ -7361,7 +7481,7 @@ def page_dashboard() -> None:
             ("Top RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
-    render_companion_card(best, context="dashboard")
+    render_companion_showcase(best, context="dashboard")
     render_market_pulse(df, context="dashboard")
     render_workflow_cockpit(best, str(best.get("Data source", "n/a")), context="dashboard")
     render_action_queue(df, key="dashboard_action_queue")

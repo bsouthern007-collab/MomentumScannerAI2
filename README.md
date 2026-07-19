@@ -86,9 +86,9 @@ Dashboard, Daily Gameplan, Scanner, Market Scan, and Live Tracker include a scan
 /Learn?track=Market%20pulse
 ```
 
-## Branding and Scout
+## Branding and AI characters
 
-The app includes an inline SVG brand mark and a lightweight AI companion named Scout. Scout appears in the sidebar and dashboard hero, then summarizes the current top stock with plain-English entry, stop, target, and data-confidence context. The mascot is code-native, so it does not require image hosting, paid services, or extra deployment files.
+The app includes an inline SVG brand mark and selectable AI characters: Scout, Null, Nova, and Flux. The selected character appears in the sidebar and dashboard, then summarizes the current top stock with plain-English entry, stop, target, and data-confidence context. Character art ships in `assets/`, so it does not require image hosting, paid services, or extra deployment files.
 
 ## Paper approval gate
 

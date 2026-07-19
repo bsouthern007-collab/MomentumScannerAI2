@@ -1,0 +1,14 @@
+<svg width="220" height="220" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Null AI companion">
+  <rect width="220" height="220" rx="42" fill="#05060A"/>
+  <path d="M45 167C51 105 69 54 110 42C151 54 169 105 175 167C151 185 69 185 45 167Z" fill="#0B0F17" stroke="#A78BFA" stroke-width="5"/>
+  <path d="M69 86C81 65 96 55 110 55C124 55 139 65 151 86C138 78 82 78 69 86Z" fill="#151B29"/>
+  <rect x="64" y="85" width="92" height="58" rx="24" fill="#101821" stroke="#293546" stroke-width="4"/>
+  <path d="M82 108H99" stroke="#A78BFA" stroke-width="8" stroke-linecap="round"/>
+  <path d="M121 108H138" stroke="#A78BFA" stroke-width="8" stroke-linecap="round"/>
+  <path d="M92 130H128" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+  <path d="M69 159C90 169 130 169 151 159" fill="none" stroke="#38BDF8" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="62" cy="63" r="7" fill="#38BDF8"/>
+  <circle cx="158" cy="63" r="7" fill="#38BDF8"/>
+  <path d="M62 63L79 84M158 63L141 84" stroke="#38BDF8" stroke-width="4" stroke-linecap="round"/>
+  <text x="110" y="204" text-anchor="middle" fill="#C4B5FD" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900">NULL</text>
+</svg>
