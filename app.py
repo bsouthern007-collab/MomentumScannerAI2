@@ -129,6 +129,10 @@ AI_COMPANION_CSS = """
   border-color: rgba(255, 55, 95, .68);
   box-shadow: 0 18px 48px rgba(255, 55, 95, .18), 0 18px 44px rgba(0, 0, 0, .34);
 }
+.pet-sell .pet-bubble {
+  border-color: rgba(56, 189, 248, .72);
+  box-shadow: 0 18px 48px rgba(56, 189, 248, .20), 0 18px 44px rgba(0, 0, 0, .34);
+}
 .pet-kicker {
   color: var(--pet-accent);
   font-size: 10px;
@@ -156,10 +160,36 @@ AI_COMPANION_CSS = """
   font-size: 11px;
   font-weight: 800;
 }
+.pet-status-light {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--pet-muted);
+  border: 2px solid rgba(255, 255, 255, .58);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .07), 0 0 14px rgba(183, 194, 208, .46);
+}
 .pet-status-time {
   flex: 0 0 auto;
   color: var(--pet-muted);
   font-size: 10px;
+}
+.pet-ready .pet-status-light {
+  background: #00C805;
+  box-shadow: 0 0 0 3px rgba(0, 200, 5, .12), 0 0 18px rgba(0, 200, 5, .74);
+}
+.pet-watch .pet-status-light,
+.pet-neutral .pet-status-light {
+  background: #FF375F;
+  box-shadow: 0 0 0 3px rgba(255, 55, 95, .12), 0 0 18px rgba(255, 55, 95, .68);
+}
+.pet-danger .pet-status-light {
+  background: #FF375F;
+  box-shadow: 0 0 0 3px rgba(255, 55, 95, .12), 0 0 18px rgba(255, 55, 95, .74);
+}
+.pet-sell .pet-status-light {
+  background: #38BDF8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, .16), 0 0 18px rgba(56, 189, 248, .78);
 }
 .pet-ready .pet-status-pill {
   border-color: rgba(0, 200, 5, .72);
@@ -172,6 +202,10 @@ AI_COMPANION_CSS = """
 .pet-danger .pet-status-pill {
   border-color: rgba(255, 55, 95, .76);
   color: #FFE1E8;
+}
+.pet-sell .pet-status-pill {
+  border-color: rgba(56, 189, 248, .78);
+  color: #DFF6FF;
 }
 .pet-message {
   margin-top: 5px;
@@ -284,8 +318,16 @@ AI_COMPANION_CSS = """
 .pet-danger .pet-antenna:after {
   background: #FF375F;
 }
+.pet-sell .pet-core,
+.pet-sell .pet-eye,
+.pet-sell .pet-antenna:after {
+  background: #38BDF8;
+}
 .pet-danger .pet-mouth {
   border-bottom-color: #FF9CB1;
+}
+.pet-sell .pet-mouth {
+  border-bottom-color: #DFF6FF;
 }
 .pet-head {
   position: absolute;
@@ -592,7 +634,7 @@ export default function(component) {
   const styleValue = String(data.style || "balanced").toLowerCase()
   const safeStyle = ["balanced", "defensive", "curious", "aggressive"].includes(styleValue) ? styleValue : "balanced"
   const moodValue = String(data.mood || "neutral").toLowerCase()
-  const safeMood = ["ready", "watch", "danger", "neutral"].includes(moodValue) ? moodValue : "neutral"
+  const safeMood = ["ready", "watch", "danger", "neutral", "sell"].includes(moodValue) ? moodValue : "neutral"
   const messages = Array.isArray(data.messages) && data.messages.length
     ? data.messages
     : [`${name} is watching your paper-trading workflow.`]
@@ -655,6 +697,7 @@ export default function(component) {
       <div class="pet-bubble">
         <div class="pet-kicker">${escapeHtml(name)} AI companion</div>
         <div class="pet-status-row">
+          <span class="pet-status-light"></span>
           <span class="pet-status-pill">${escapeHtml(status)}</span>
           ${updatedMarkup}
         </div>
@@ -3573,7 +3616,27 @@ def apply_style(mode: str | None = None) -> None:
         div[data-testid="stMetricValue"] {{font-weight: 750; color: var(--msa-text);}}
         div[data-testid="stMetricDelta"] {{font-weight: 650;}}
         div[data-testid="stDataFrame"] {{border: 1px solid var(--msa-border); border-radius: 8px; overflow: hidden;}}
-        .stAlert {{border-radius: 8px;}}
+        [data-testid="stCaptionContainer"],
+        [data-testid="stCaptionContainer"] p {{
+            color: var(--msa-muted) !important;
+        }}
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li {{
+            color: var(--msa-text);
+        }}
+        .stAlert,
+        [data-testid="stAlert"] {{
+            border-radius: 8px;
+            border: 1px solid var(--msa-border);
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            color: var(--msa-text);
+        }}
+        .stAlert *,
+        [data-testid="stAlert"] *,
+        [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {{
+            color: var(--msa-text) !important;
+            font-weight: 650;
+        }}
         .msa-hero {{
             position: relative;
             overflow: hidden;
@@ -4344,12 +4407,80 @@ def apply_style(mode: str | None = None) -> None:
         .msa-ai-ready:before {{background: var(--msa-up);}}
         .msa-ai-watch:before {{background: var(--msa-orange);}}
         .msa-ai-danger:before {{background: var(--msa-down);}}
+        .msa-ai-sell:before {{background: var(--msa-blue);}}
         .msa-ai-header {{
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
             gap: 14px;
             margin-bottom: 12px;
+        }}
+        .msa-ai-topline {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+        .msa-ai-signal-card {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            padding: 10px 12px;
+            min-width: 210px;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .035);
+        }}
+        .msa-ai-light {{
+            display: grid;
+            place-items: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, .10);
+            border: 1px solid var(--msa-border);
+        }}
+        .msa-ai-light span {{
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            background: var(--msa-muted-soft);
+            box-shadow: 0 0 0 5px rgba(148, 163, 184, .11), 0 0 20px rgba(148, 163, 184, .46);
+        }}
+        .msa-ai-signal-ready .msa-ai-light span {{
+            background: var(--msa-up);
+            box-shadow: 0 0 0 5px rgba(0, 200, 5, .13), 0 0 24px rgba(0, 200, 5, .74);
+        }}
+        .msa-ai-signal-danger .msa-ai-light span,
+        .msa-ai-signal-watch .msa-ai-light span,
+        .msa-ai-signal-hold .msa-ai-light span {{
+            background: var(--msa-down);
+            box-shadow: 0 0 0 5px rgba(255, 55, 95, .13), 0 0 24px rgba(255, 55, 95, .72);
+        }}
+        .msa-ai-signal-sell .msa-ai-light span {{
+            background: var(--msa-blue);
+            box-shadow: 0 0 0 5px rgba(56, 189, 248, .16), 0 0 24px rgba(56, 189, 248, .78);
+        }}
+        .msa-ai-signal-kicker {{
+            color: var(--msa-muted);
+            font-size: .68rem;
+            font-weight: 850;
+            letter-spacing: .07em;
+            text-transform: uppercase;
+        }}
+        .msa-ai-signal-action {{
+            color: var(--msa-text);
+            font-size: 1.03rem;
+            font-weight: 900;
+            line-height: 1.1;
+            margin-top: 3px;
+        }}
+        .msa-ai-signal-detail {{
+            color: var(--msa-muted);
+            font-size: .76rem;
+            font-weight: 650;
+            line-height: 1.25;
+            margin-top: 3px;
         }}
         .msa-ai-kicker {{
             color: var(--msa-muted-soft);
@@ -4366,11 +4497,12 @@ def apply_style(mode: str | None = None) -> None:
             margin-top: 4px;
         }}
         .msa-ai-detail {{
-            color: var(--msa-muted);
+            color: var(--msa-text);
             font-size: .92rem;
             line-height: 1.36;
             margin-top: 7px;
             max-width: 860px;
+            font-weight: 620;
         }}
         .msa-ai-score {{
             min-width: 116px;
@@ -4413,10 +4545,11 @@ def apply_style(mode: str | None = None) -> None:
         .msa-ai-level-profit .msa-ai-level-value {{color: var(--msa-up);}}
         .msa-ai-level-danger .msa-ai-level-value {{color: var(--msa-down);}}
         .msa-ai-level-note {{
-            color: var(--msa-muted);
+            color: var(--msa-text);
             font-size: .78rem;
             line-height: 1.25;
             margin-top: 6px;
+            font-weight: 620;
         }}
         .msa-plan-ladder {{
             display: grid;
@@ -4487,19 +4620,21 @@ def apply_style(mode: str | None = None) -> None:
         .msa-plan-danger .msa-plan-value {{color: var(--msa-down);}}
         .msa-plan-watch .msa-plan-value {{color: var(--msa-orange);}}
         .msa-plan-detail {{
-            color: var(--msa-muted);
+            color: var(--msa-text);
             font-size: .8rem;
             line-height: 1.28;
             margin-top: 7px;
+            font-weight: 610;
         }}
         .msa-plan-rule {{
             border: 1px solid var(--msa-border);
             border-radius: 8px;
             background: var(--msa-panel);
-            color: var(--msa-muted);
+            color: var(--msa-text);
             padding: 10px 12px;
             margin: 0 0 14px 0;
             line-height: 1.35;
+            font-weight: 640;
         }}
         .msa-ai-list {{
             border: 1px solid var(--msa-border);
@@ -4516,21 +4651,24 @@ def apply_style(mode: str | None = None) -> None:
         .msa-ai-list ul {{
             margin: 0;
             padding-left: 18px;
-            color: var(--msa-muted);
+            color: var(--msa-text);
         }}
         .msa-ai-list li {{
             margin: 5px 0;
             line-height: 1.32;
+            color: var(--msa-text);
+            font-weight: 610;
         }}
         .msa-ai-plain {{
             border: 1px solid var(--msa-border);
             border-left: 4px solid var(--msa-blue);
             border-radius: 8px;
             background: var(--msa-panel);
-            color: var(--msa-muted);
+            color: var(--msa-text);
             padding: 11px 13px;
             margin-top: 12px;
             line-height: 1.34;
+            font-weight: 640;
         }}
         @media (max-width: 900px) {{
             .msa-cockpit-head {{
@@ -4548,6 +4686,13 @@ def apply_style(mode: str | None = None) -> None:
             .msa-ai-score {{
                 text-align: left;
                 margin-top: 10px;
+            }}
+            .msa-ai-topline {{
+                align-items: flex-start;
+                flex-direction: column;
+            }}
+            .msa-ai-signal-card {{
+                width: 100%;
             }}
             .msa-hero-grid {{
                 grid-template-columns: 1fr;
@@ -4749,6 +4894,8 @@ def render_companion_picker() -> None:
 
 
 def companion_status_mood(status: str) -> str:
+    if status == "Sell / trim":
+        return "sell"
     if status in {"Breakout trigger", "In buy zone"}:
         return "ready"
     if status in {"Below stop", "No quote"}:
@@ -4763,7 +4910,8 @@ def remember_companion_analysis(analysis: dict[str, Any] | None) -> None:
         return
     status = live_status(analysis)
     confidence = data_confidence_summary(analysis)
-    mood = companion_status_mood(status)
+    signal = ai_signal_light(analysis)
+    mood = str(signal.get("mood", companion_status_mood(status)))
     if safe_float(confidence.get("score"), 0) < 45:
         mood = "danger"
     elif safe_float(confidence.get("score"), 0) < 65 and mood == "neutral":
@@ -4777,6 +4925,10 @@ def remember_companion_analysis(analysis: dict[str, Any] | None) -> None:
         "Target 1": str(analysis.get("Target 1") or "target 1"),
         "Data confidence": str(confidence.get("label", "data check")),
         "Playbook fit": str(analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score")))),
+        "AI light": str(signal.get("label", "Red light")),
+        "Signal action": str(signal.get("action", "Wait")),
+        "Signal detail": str(signal.get("detail", "Wait for a cleaner setup.")),
+        "Signal color": str(signal.get("color", "red")),
         "Mood": mood,
         "Updated": datetime.now().strftime("%I:%M:%S %p"),
         "Companion": str(profile["name"]),
@@ -4802,8 +4954,12 @@ def companion_overlay_messages(profile: dict[str, str]) -> list[str]:
         confidence = str(latest.get("Data confidence", "data check"))
         fit = str(latest.get("Playbook fit", "setup check"))
         updated = str(latest.get("Updated", "now"))
+        signal = str(latest.get("AI light", "Red light"))
+        signal_action = str(latest.get("Signal action", "Wait"))
+        signal_detail = str(latest.get("Signal detail", "Wait for a cleaner setup."))
         return [
             f"{ticker}: {status}. Updated {updated}. Use {entry}, {stop}, and {target} as the paper-trade map.",
+            f"{name} signal: {signal} - {signal_action}. {signal_detail}",
             f"{name} check: data confidence is {confidence}. Verify fast moves before trusting the number.",
             f"{ticker} fit: {fit}. If the setup is not clean, keep scanning instead of forcing a trade.",
             f"Paper rule: approve only after entry, stop, target, news, volume, and spread all make sense.",
@@ -5290,6 +5446,68 @@ def ai_tone(label: str, status: str) -> tuple[str, str, str]:
     return "hold", "Wait", "gray"
 
 
+def ai_signal_light(analysis: dict[str, Any], chart_source: str | None = None) -> dict[str, str]:
+    label, _ = ai_action_summary(analysis)
+    status = live_status(analysis)
+    confidence = data_confidence_summary(analysis, chart_source)
+    math_data = ai_trade_math(analysis)
+    passed, total = setup_completion(analysis)
+    price = math_data["price"]
+    target_1 = math_data["target_1"]
+    rr_1 = math_data["rr_1"]
+    weak_data = safe_float(confidence.get("score"), 0) < 65
+    too_many_missing_checks = passed < max(total - 2, 1)
+
+    if price is not None and target_1 is not None and price >= target_1:
+        return {
+            "tone": "sell",
+            "color": "blue",
+            "mood": "sell",
+            "label": "Blue light",
+            "action": "Sell / trim",
+            "detail": f"Price is at or above target 1 near {money(target_1)}. Review taking profit on the paper plan.",
+        }
+
+    if status in {"Below stop", "No quote"} or label in {"Plan invalid", "Study only"}:
+        return {
+            "tone": "danger",
+            "color": "red",
+            "mood": "danger",
+            "label": "Red light",
+            "action": "Do not buy",
+            "detail": "The setup is invalid, missing a quote, or too weak for this momentum playbook.",
+        }
+
+    if weak_data:
+        return {
+            "tone": "danger",
+            "color": "red",
+            "mood": "danger",
+            "label": "Red light",
+            "action": "Verify first",
+            "detail": f"Data confidence is {confidence['label']}. Check another source before using this setup.",
+        }
+
+    if status == "Breakout trigger" and not too_many_missing_checks and (rr_1 is None or rr_1 >= 1.2):
+        return {
+            "tone": "ready",
+            "color": "green",
+            "mood": "ready",
+            "label": "Green light",
+            "action": "Paper buy review",
+            "detail": "Entry trigger is active. Confirm news, spread, volume, and risk before approval.",
+        }
+
+    return {
+        "tone": "danger",
+        "color": "red",
+        "mood": "danger",
+        "label": "Red light",
+        "action": "Wait",
+        "detail": "The stock is not at a clean buy trigger yet. Keep watching instead of chasing.",
+    }
+
+
 def setup_command_tone(label: str, status: str, confidence_score: float | int | None) -> str:
     tone, _, _ = ai_tone(label, status)
     score = safe_float(confidence_score, 0) or 0
@@ -5578,8 +5796,11 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
     label, message = ai_action_summary(analysis)
     status = live_status(analysis)
     math_data = ai_trade_math(analysis)
-    tone, action, color = ai_tone(label, status)
+    _, action, _ = ai_tone(label, status)
     confidence = data_confidence_summary(analysis, chart_source)
+    signal = ai_signal_light(analysis, chart_source)
+    command_tone = str(signal["tone"])
+    command_action = str(signal["action"])
     passed, total = setup_completion(analysis)
     score = safe_float(analysis.get("AI score"), 0) or 0
     rr_1 = f"{math_data['rr_1']:.2f}R" if math_data["rr_1"] is not None else "n/a"
@@ -5612,8 +5833,9 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
     with st.container(border=True):
         st.markdown("**AI assistant**")
         with st.container(horizontal=True):
-            st.badge(label, icon=":material/psychology:", color=color)
-            st.badge(status, icon=":material/candlestick_chart:", color=color)
+            st.badge(str(signal["label"]), icon=":material/radio_button_checked:", color=str(signal["color"]))
+            st.badge(label, icon=":material/psychology:", color=str(signal["color"]))
+            st.badge(status, icon=":material/candlestick_chart:", color=str(signal["color"]))
             st.badge(str(confidence["label"]), icon=":material/verified:", color=str(confidence["color"]))
             st.badge("Paper approval only", icon=":material/edit_note:", color="blue")
 
@@ -5622,8 +5844,20 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
             <div class="msa-ai-command msa-ai-{tone}">
                 <div class="msa-ai-header">
                     <div>
-                        <div class="msa-ai-kicker">AI command center</div>
-                        <div class="msa-ai-title">{action}</div>
+                        <div class="msa-ai-topline">
+                            <div class="msa-ai-signal-card msa-ai-signal-{signal_tone}">
+                                <div class="msa-ai-light"><span></span></div>
+                                <div>
+                                    <div class="msa-ai-signal-kicker">AI signal light</div>
+                                    <div class="msa-ai-signal-action">{signal_action}</div>
+                                    <div class="msa-ai-signal-detail">{signal_detail}</div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="msa-ai-kicker">AI command center</div>
+                                <div class="msa-ai-title">{action}</div>
+                            </div>
+                        </div>
                         <div class="msa-ai-detail">{message}</div>
                     </div>
                     <div class="msa-ai-score"><span>Score</span>{score}/100<br><span>Checks</span>{passed}/{total}</div>
@@ -5631,8 +5865,11 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
                 {levels}
             </div>
             """.format(
-                tone=html.escape(tone),
-                action=html.escape(action),
+                tone=html.escape(command_tone),
+                signal_tone=html.escape(command_tone),
+                signal_action=html.escape(command_action),
+                signal_detail=html.escape(str(signal["detail"])),
+                action=html.escape(command_action if command_tone in {"sell", "ready", "danger"} else action),
                 message=html.escape(message),
                 score=int(score),
                 passed=passed,

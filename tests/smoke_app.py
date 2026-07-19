@@ -20,6 +20,16 @@ def main() -> None:
     analysis = app.analyze_ticker("SOUN", prefer_live=False)
     assert analysis["AI score"] > 0
     assert analysis["Entry trigger"].startswith("Break over")
+    assert app.ai_signal_light(analysis)["color"] in {"red", "green", "blue"}
+    green_case = dict(analysis)
+    green_case["Data source"] = "Finnhub quote"
+    green_case["Market state"] = "OPEN"
+    green_case["Quote time"] = app.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+    green_case["Price"] = float(green_case["Entry trigger price"]) * 1.001
+    assert app.ai_signal_light(green_case)["color"] == "green"
+    blue_case = dict(green_case)
+    blue_case["Price"] = float(blue_case["Target 1 price"]) * 1.001
+    assert app.ai_signal_light(blue_case)["color"] == "blue"
     assert app.setup_completion(analysis)[1] == 7
     levels = app.chart_trade_levels(analysis)
     assert levels["entry"] and levels["stop"] and levels["target_1"]

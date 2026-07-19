@@ -120,7 +120,16 @@ class DesktopCompanion:
         ]
 
     def mood_color(self) -> str:
+        signal_color = self.status_snapshot.get("Signal color", "").lower()
+        if signal_color == "blue":
+            return "#38BDF8"
+        if signal_color == "green":
+            return "#00C805"
+        if signal_color == "red":
+            return "#FF375F"
         mood = self.status_snapshot.get("Mood", "neutral")
+        if mood == "sell":
+            return "#38BDF8"
         if mood == "danger":
             return "#FF375F"
         if mood == "watch":
