@@ -2232,6 +2232,63 @@ def approve_paper_order(order: dict[str, Any]) -> None:
     )
 
 
+def render_paper_approval_gate(
+    analysis: dict[str, Any],
+    order: dict[str, Any],
+    chart_source: str,
+    risk_dollars: float,
+) -> bool:
+    confidence = data_confidence_summary(analysis, chart_source)
+    status = live_status(analysis)
+    math_data = ai_trade_math(analysis)
+    rr_1 = math_data["rr_1"]
+    risk_per_share = math_data["risk"]
+    hard_blocks: list[str] = []
+    caution_notes: list[str] = []
+
+    if confidence["score"] < 45:
+        hard_blocks.append("Data confidence is too weak for approval. Verify another source first.")
+    elif confidence["score"] < 65:
+        caution_notes.append(f"Data confidence is {confidence['label']}. Confirm the quote before approval.")
+    if status == "Below stop":
+        hard_blocks.append("Price is below the stop area, so the staged plan is invalid.")
+    if risk_per_share is None or risk_per_share <= 0:
+        hard_blocks.append("The staged order does not have a valid entry-to-stop risk.")
+    if rr_1 is not None and rr_1 < 1.4:
+        caution_notes.append("Target 1 reward/risk is below the preferred 1.4R threshold.")
+
+    st.markdown("**Approval checklist**")
+    with st.container(horizontal=True):
+        st.badge(str(confidence["label"]), icon=":material/verified:", color=str(confidence["color"]))
+        st.badge(status, icon=":material/candlestick_chart:", color="red" if status == "Below stop" else "green" if status in {"Breakout trigger", "In buy zone"} else "orange")
+        st.badge(f"Max paper risk {money(risk_dollars)}", icon=":material/account_balance_wallet:", color="blue")
+        st.badge(f"Staged risk {money(safe_float(order.get('Risk $')))}", icon=":material/rule:", color="blue")
+
+    checklist_key = f"{normalize_user_symbol(order.get('Ticker'))}_{order.get('Entry')}_{order.get('Stop')}_{safe_float(order.get('Risk $'), 0)}"
+    items = [
+        "I checked the data source, confidence, and quote time.",
+        "I checked the chart and the entry trigger is not a chase.",
+        "I understand the stop loss and where the paper idea is wrong.",
+        "I checked that target 1 pays enough reward for the risk.",
+        "I checked news, spread, volume, and halt risk before approval.",
+    ]
+    completed = 0
+    for index, item in enumerate(items):
+        if st.checkbox(item, key=f"paper_gate_{checklist_key}_{index}"):
+            completed += 1
+    st.progress(completed / len(items))
+    st.caption(f"{completed} of {len(items)} approval checks complete. This still saves a paper order only.")
+
+    if hard_blocks:
+        st.error(" ".join(hard_blocks), icon=":material/block:")
+    elif caution_notes:
+        st.warning(" ".join(caution_notes), icon=":material/warning:")
+    else:
+        st.caption("No hard approval blockers from the current model. Keep this paper-only unless a real broker integration is separately approved.")
+
+    return completed == len(items) and not hard_blocks
+
+
 def journal_stats(df: pd.DataFrame) -> dict[str, float]:
     if df.empty:
         return {"trades": 0, "win_rate": 0.0, "total_pl": 0.0, "avg_r": 0.0}
@@ -6499,11 +6556,13 @@ def page_trade_desk() -> None:
     with st.container(border=True):
         st.markdown("**Staged order**")
         st.dataframe(pd.DataFrame([order]), width="stretch", hide_index=True)
+        approval_ready = render_paper_approval_gate(analysis, order, source, risk_dollars)
         confirm = st.checkbox(
             "I approve this paper trade plan and understand it is not financial advice.",
             key=f"approve_{ticker}_{order['Entry']}_{order['Stop']}",
+            disabled=not approval_ready,
         )
-        if st.button("Approve paper order", type="primary", icon=":material/check_circle:", disabled=not confirm):
+        if st.button("Approve paper order", type="primary", icon=":material/check_circle:", disabled=not (approval_ready and confirm)):
             approve_paper_order(order)
             st.success("Approved paper order saved to Trade Desk and Journal.")
             st.rerun()
@@ -6769,7 +6828,8 @@ def page_learn() -> None:
                 st.markdown(markdown_text("2. Set Max paper risk, like $10, $25, or $50."))
                 st.write("3. Choose the lookback and candle size.")
                 st.write("4. Read the AI decision and setup checks.")
-                st.write("5. Review Entry, Stop, Target, Shares, and Reason before approval.")
+                st.write("5. Complete the approval checklist.")
+                st.write("6. Review Entry, Stop, Target, Shares, and Reason before approval.")
 
         with st.container(border=True):
             st.markdown("**Position size in plain English**")
@@ -6783,11 +6843,13 @@ def page_learn() -> None:
             st.write("- If price reaches the stop: mark the paper trade as invalid and record the planned loss.")
             st.write("- If price reaches target 1: record what happened and whether the plan was followed.")
             st.write("- If price never triggers: write 'no trade' in your notes. Skipping is part of trading.")
+            st.write("- If the checklist blocks approval: treat that as a saved lesson, not a failure.")
 
         with st.container(border=True):
             st.markdown("**Do not approve if...**")
             st.write("- You cannot explain why the stock is moving.")
             st.write("- The AI says Study only, Watch only, or Plan invalid.")
+            st.write("- The approval checklist is not complete.")
             st.write("- The entry is far above the buy zone and you would be chasing.")
             st.write("- The spread is wide, candles are erratic, or news is unclear.")
             st.write("- You are increasing size because you want to make back a loss.")
@@ -7245,6 +7307,7 @@ def page_learn() -> None:
             [
                 {"Term": "Paper trade", "Meaning": "A practice trade that records the plan without risking real money.", "Why it matters": "New traders can learn the process before using real capital."},
                 {"Term": "Order ticket", "Meaning": "The broker screen where symbol, side, quantity, order type, and prices are entered.", "Why it matters": "Most costly mistakes happen when the ticket is rushed or misunderstood."},
+                {"Term": "Approval checklist", "Meaning": "The Trade Desk review that must be completed before saving a paper order.", "Why it matters": "It slows beginners down before they accept risk, stale data, or a bad setup."},
                 {"Term": "Market order", "Meaning": "An order that tries to fill right away at the available market price.", "Why it matters": "It can fill at a different price than expected in fast stocks."},
                 {"Term": "Limit order", "Meaning": "An order that sets the worst price you are willing to accept.", "Why it matters": "It gives price control, but it may not fill."},
                 {"Term": "Stop order", "Meaning": "An order that activates after a stop price is reached.", "Why it matters": "Some stop orders can become market orders after triggering."},

@@ -65,3 +65,7 @@ The app includes a guided workflow cockpit that tells users the next step for th
 ```text
 /Learn?track=Workflow%20cockpit
 ```
+
+## Paper approval gate
+
+Trade Desk includes a paper-order approval checklist for data source, chart entry, stop loss, target reward, news, spread, volume, and halt risk. The final approval button stays locked until the checklist is complete and no hard blocker is active.
