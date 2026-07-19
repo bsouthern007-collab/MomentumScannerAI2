@@ -2395,7 +2395,7 @@ def theme_palette(mode: str | None = None) -> dict[str, str]:
             "violet": "#7C3AED",
             "orange": "#B45309",
             "grid": "#DDE5EE",
-            "chart_grid": "rgba(148, 163, 184, 0.24)",
+            "chart_grid": "rgba(148, 163, 184, 0.16)",
         }
     return {
         "app_bg": "#090C10",
@@ -2415,7 +2415,7 @@ def theme_palette(mode: str | None = None) -> dict[str, str]:
         "violet": "#A78BFA",
         "orange": "#F59E0B",
         "grid": "#223041",
-        "chart_grid": "rgba(148, 163, 184, 0.13)",
+        "chart_grid": "rgba(148, 163, 184, 0.09)",
     }
 
 
@@ -2689,6 +2689,100 @@ def apply_style(mode: str | None = None) -> None:
             line-height: 1.35;
             margin-top: 10px;
         }}
+        .msa-pulse {{
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(16, 185, 129, 0.10), transparent 34%),
+                linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            box-shadow: 0 18px 42px var(--msa-shadow);
+            padding: 15px;
+            margin: 10px 0 14px 0;
+        }}
+        .msa-pulse-head {{
+            display: grid;
+            grid-template-columns: minmax(230px, .9fr) minmax(260px, 1.35fr);
+            gap: 12px;
+            align-items: stretch;
+        }}
+        .msa-pulse-kicker {{
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }}
+        .msa-pulse-title {{
+            color: var(--msa-text);
+            font-size: clamp(1.35rem, 2.7vw, 2rem);
+            font-weight: 880;
+            line-height: 1.06;
+            margin-top: 5px;
+        }}
+        .msa-pulse-copy {{
+            color: var(--msa-muted);
+            font-size: .86rem;
+            line-height: 1.34;
+            margin-top: 7px;
+        }}
+        .msa-pulse-next {{
+            border: 1px solid var(--msa-border);
+            border-left: 4px solid var(--msa-blue);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            padding: 12px 13px;
+        }}
+        .msa-pulse-next-ready {{border-left-color: var(--msa-up);}}
+        .msa-pulse-next-watch {{border-left-color: var(--msa-orange);}}
+        .msa-pulse-next-danger {{border-left-color: var(--msa-down);}}
+        .msa-pulse-next-neutral {{border-left-color: var(--msa-blue);}}
+        .msa-pulse-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+            gap: 9px;
+            margin-top: 12px;
+        }}
+        .msa-pulse-stat {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            padding: 11px 12px;
+            min-height: 96px;
+        }}
+        .msa-pulse-stat-ready {{border-top: 4px solid var(--msa-up);}}
+        .msa-pulse-stat-watch {{border-top: 4px solid var(--msa-orange);}}
+        .msa-pulse-stat-danger {{border-top: 4px solid var(--msa-down);}}
+        .msa-pulse-stat-neutral {{border-top: 4px solid var(--msa-blue);}}
+        .msa-pulse-stat-label {{
+            color: var(--msa-muted-soft);
+            font-size: .7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }}
+        .msa-pulse-stat-value {{
+            color: var(--msa-text);
+            font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+            font-weight: 840;
+            line-height: 1.06;
+            margin-top: 6px;
+        }}
+        .msa-pulse-stat-detail {{
+            color: var(--msa-muted);
+            font-size: .78rem;
+            line-height: 1.25;
+            margin-top: 6px;
+        }}
+        .msa-pulse-flags {{
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            padding: 10px 12px;
+            line-height: 1.35;
+            margin-top: 10px;
+        }}
+        .msa-pulse-flags b {{color: var(--msa-text);}}
         .msa-level-board {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -3066,6 +3160,9 @@ def apply_style(mode: str | None = None) -> None:
         }}
         @media (max-width: 900px) {{
             .msa-cockpit-head {{
+                grid-template-columns: 1fr;
+            }}
+            .msa-pulse-head {{
                 grid-template-columns: 1fr;
             }}
             .msa-readiness-command {{
@@ -3982,6 +4079,252 @@ def data_confidence_summary(
     }
 
 
+def pulse_series(df: pd.DataFrame, column: str, default: Any = "n/a") -> pd.Series:
+    if column in df.columns:
+        return df[column].fillna(default)
+    return pd.Series([default] * len(df), index=df.index)
+
+
+def pulse_numeric(df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in df.columns:
+        return pd.Series([np.nan] * len(df), index=df.index, dtype="float64")
+    return pd.to_numeric(df[column], errors="coerce")
+
+
+def pulse_stock_label(row: dict[str, Any]) -> str:
+    for key in ("Ticker", "Stock", "Symbol"):
+        value = str(row.get(key, "") or "").upper().strip()
+        if value:
+            return value
+    return "n/a"
+
+
+def pulse_confidence_labels(df: pd.DataFrame) -> pd.Series:
+    if "Data confidence" in df.columns:
+        return df["Data confidence"].fillna("n/a").astype(str)
+    labels = [str(data_confidence_summary(row.to_dict()).get("label", "n/a")) for _, row in df.iterrows()]
+    return pd.Series(labels, index=df.index)
+
+
+def market_pulse_snapshot(df: pd.DataFrame, context: str = "market") -> dict[str, Any]:
+    if df is None or df.empty:
+        return {
+            "context": context,
+            "headline": "No clean stock rows yet",
+            "detail": "Run the scanner, refresh live tracking, or allow learning fallback rows so the app has something to study.",
+            "next_title": "Refresh or loosen filters",
+            "next_copy": "If live feeds are rate-limited, use fallback rows for practice and verify prices again before any paper approval.",
+            "tone": "watch",
+            "source_line": "No source rows loaded.",
+            "flags": ["No scanner rows are available in this view yet."],
+            "stats": [
+                {"label": "Data trust", "value": "n/a", "detail": "No rows to grade yet.", "tone": "watch"},
+                {"label": "Paper setups", "value": "0", "detail": "No breakout or buy-zone rows.", "tone": "watch"},
+                {"label": "Top stock", "value": "n/a", "detail": "Run a scan first.", "tone": "neutral"},
+                {"label": "Scan power", "value": "n/a", "detail": "No average RVOL yet.", "tone": "neutral"},
+            ],
+            "top_stock": "",
+        }
+
+    statuses = pulse_series(df, "Status", "Watching").astype(str)
+    confidence = pulse_confidence_labels(df)
+    confidence_lower = confidence.str.lower()
+    sources = pulse_series(df, "Data source", "n/a").astype(str)
+    source_lower = sources.str.lower()
+    gains = pulse_numeric(df, "Daily gain %")
+    rvol = pulse_numeric(df, "RVOL")
+    scores = pulse_numeric(df, "AI score")
+
+    active_statuses = {"Breakout trigger", "In buy zone"}
+    waiting_statuses = {"Near buy zone", "Momentum active"}
+    active_count = int(statuses.isin(active_statuses).sum())
+    waiting_count = int(statuses.isin(waiting_statuses).sum())
+    below_stop_count = int((statuses == "Below stop").sum())
+    no_quote_count = int((statuses == "No quote").sum())
+    learning_count = int(source_lower.str.contains("learning|fallback", regex=True).sum())
+    trusted_mask = confidence_lower.isin({"high confidence", "usable for paper"})
+    weak_mask = confidence_lower.isin({"verify first", "practice only"}) | source_lower.str.contains("learning|fallback", regex=True)
+    trusted_count = int(trusted_mask.sum())
+    weak_count = int(weak_mask.sum())
+    trust_pct = int(round((trusted_count / len(df)) * 100)) if len(df) else 0
+    avg_gain = safe_float(gains.mean())
+    avg_rvol = safe_float(rvol.mean())
+
+    ranking = df.copy()
+    status_rank = {
+        "Breakout trigger": 0,
+        "In buy zone": 1,
+        "Near buy zone": 2,
+        "Momentum active": 3,
+        "Watching": 4,
+        "Below stop": 8,
+        "No quote": 9,
+    }
+    ranking["_pulse_status_rank"] = statuses.map(status_rank).fillna(6)
+    ranking["_pulse_score"] = scores.fillna(0)
+    ranking["_pulse_gain"] = gains.fillna(-999)
+    ranking["_pulse_rvol"] = rvol.fillna(0)
+    top_row = ranking.sort_values(
+        ["_pulse_status_rank", "_pulse_score", "_pulse_gain", "_pulse_rvol"],
+        ascending=[True, False, False, False],
+    ).iloc[0].to_dict()
+    top_stock = pulse_stock_label(top_row)
+    top_status = str(top_row.get("Status", "Watching") or "Watching")
+    top_price = safe_float(top_row.get("Price"))
+    top_score = safe_float(top_row.get("AI score"))
+    top_score_text = f"{int(top_score)}/100" if top_score is not None else "n/a"
+
+    flags: list[str] = []
+    if weak_count:
+        flags.append(f"{weak_count} row{'s' if weak_count != 1 else ''} need price/source verification.")
+    if learning_count:
+        flags.append(f"{learning_count} row{'s' if learning_count != 1 else ''} use learning or fallback data.")
+    if below_stop_count:
+        flags.append(f"{below_stop_count} row{'s' if below_stop_count != 1 else ''} are below the stop area.")
+    if no_quote_count:
+        flags.append(f"{no_quote_count} row{'s' if no_quote_count != 1 else ''} have no active quote.")
+    if avg_rvol is not None and avg_rvol < DEFAULT_RULES["min_rvol"]:
+        flags.append("Average RVOL is below the preferred momentum threshold.")
+    if active_count == 0 and waiting_count == 0:
+        flags.append("No row is in a buy zone, trigger, or near-trigger watch state yet.")
+    if not flags:
+        flags.append("No major scan-wide blocker from the current rows.")
+
+    if weak_count >= max(1, math.ceil(len(df) * 0.5)):
+        headline = "Verify prices before trusting this scan"
+        detail = "A lot of the current rows are fallback, stale, or marked verify-first. Treat them as study ideas until another source agrees."
+        next_title = "Check source and chart first"
+        next_copy = "Open Charts for the leading stock, compare the latest candle with the price audit, and read the news before staging anything."
+        tone = "danger" if trusted_count == 0 else "watch"
+    elif active_count > 0:
+        headline = "Paper setups are forming"
+        detail = f"{active_count} stock{'s' if active_count != 1 else ''} are at a breakout trigger or inside the buy zone. Slow down and verify the exact levels."
+        next_title = "Open the top chart"
+        next_copy = f"Start with {top_stock}. Confirm 1-minute candles, news, entry, stop, and take-profit before any paper approval."
+        tone = "ready"
+    elif waiting_count > 0:
+        headline = "Good watchlist, wait for the trigger"
+        detail = f"{waiting_count} stock{'s' if waiting_count != 1 else ''} are close or have momentum, but the clean paper-entry condition is not confirmed yet."
+        next_title = "Watch, do not chase"
+        next_copy = "Keep the chart open, wait for price to reach the planned area, and skip if reward/risk gets worse."
+        tone = "watch"
+    elif avg_gain is not None and avg_gain >= DEFAULT_RULES["min_gain_pct"] and avg_rvol is not None and avg_rvol >= DEFAULT_RULES["min_rvol"]:
+        headline = "Momentum is active, but entries need work"
+        detail = "The list has attention and movement, but the top rows are not clean buy-zone or trigger setups yet."
+        next_title = "Build the watchlist"
+        next_copy = "Sort by score and RVOL, then inspect the best chart instead of forcing a paper order."
+        tone = "watch"
+    else:
+        headline = "Quiet or mixed scan"
+        detail = "This is a better learning moment than a paper-trade moment. Review terms, chart patterns, and news until a cleaner setup appears."
+        next_title = "Study or scan another batch"
+        next_copy = "Run another market-scan batch, check news, or use Learn to practice the workflow while conditions are quiet."
+        tone = "neutral"
+
+    source_counts = sources.value_counts().head(3)
+    source_line = "; ".join(f"{source}: {count}" for source, count in source_counts.items()) or "Source mix unavailable."
+    trust_tone = "ready" if trust_pct >= 70 else "watch" if trust_pct >= 35 else "danger"
+    setup_tone = "ready" if active_count else "watch" if waiting_count else "neutral"
+    power_tone = "ready" if avg_rvol is not None and avg_rvol >= DEFAULT_RULES["min_rvol"] else "watch"
+    flag_tone = "ready" if flags == ["No major scan-wide blocker from the current rows."] else "watch" if tone != "danger" else "danger"
+
+    return {
+        "context": context,
+        "headline": headline,
+        "detail": detail,
+        "next_title": next_title,
+        "next_copy": next_copy,
+        "tone": tone,
+        "source_line": source_line,
+        "flags": flags[:4],
+        "stats": [
+            {
+                "label": "Data trust",
+                "value": f"{trust_pct}%",
+                "detail": f"{trusted_count} of {len(df)} rows are high-confidence or usable for paper.",
+                "tone": trust_tone,
+            },
+            {
+                "label": "Paper setups",
+                "value": f"{active_count}+{waiting_count}",
+                "detail": "Active plus near-trigger rows.",
+                "tone": setup_tone,
+            },
+            {
+                "label": "Top stock",
+                "value": top_stock,
+                "detail": f"{money(top_price)} | {top_status} | score {top_score_text}",
+                "tone": setup_tone if top_status in active_statuses | waiting_statuses else "neutral",
+            },
+            {
+                "label": "Scan power",
+                "value": f"{avg_rvol:.1f}x" if avg_rvol is not None and not math.isnan(avg_rvol) else "n/a",
+                "detail": f"Average RVOL. Average gain {pct(avg_gain)} across {len(df)} rows.",
+                "tone": power_tone if avg_rvol is not None else "neutral",
+            },
+        ],
+        "top_stock": top_stock if top_stock != "n/a" else "",
+        "flag_tone": flag_tone,
+    }
+
+
+def render_market_pulse(df: pd.DataFrame, context: str = "market", show_actions: bool = True) -> None:
+    pulse = market_pulse_snapshot(df, context)
+    stats_html = ['<div class="msa-pulse-grid">']
+    for stat in pulse["stats"]:
+        stats_html.append(
+            '<div class="msa-pulse-stat msa-pulse-stat-{tone}">'
+            '<div class="msa-pulse-stat-label">{label}</div>'
+            '<div class="msa-pulse-stat-value">{value}</div>'
+            '<div class="msa-pulse-stat-detail">{detail}</div>'
+            '</div>'.format(
+                tone=html.escape(str(stat["tone"])),
+                label=html.escape(str(stat["label"])),
+                value=html.escape(str(stat["value"])),
+                detail=html.escape(str(stat["detail"])),
+            )
+        )
+    stats_html.append("</div>")
+    flags = " ".join(f"{index}. {item}" for index, item in enumerate(pulse["flags"], start=1))
+
+    st.markdown(
+        """
+        <div class="msa-pulse">
+          <div class="msa-pulse-head">
+            <div>
+              <div class="msa-pulse-kicker">Market pulse</div>
+              <div class="msa-pulse-title">{headline}</div>
+              <div class="msa-pulse-copy">{detail}</div>
+            </div>
+            <div class="msa-pulse-next msa-pulse-next-{tone}">
+              <div class="msa-pulse-kicker">Best next move</div>
+              <div class="msa-pulse-title">{next_title}</div>
+              <div class="msa-pulse-copy">{next_copy}</div>
+            </div>
+          </div>
+          {stats}
+          <div class="msa-pulse-flags"><b>Risk flags:</b> {flags}<br><b>Source mix:</b> {source_line}</div>
+        </div>
+        """.format(
+            headline=html.escape(str(pulse["headline"])),
+            detail=html.escape(str(pulse["detail"])),
+            tone=html.escape(str(pulse["tone"])),
+            next_title=html.escape(str(pulse["next_title"])),
+            next_copy=html.escape(str(pulse["next_copy"])),
+            stats="".join(stats_html),
+            flags=html.escape(flags),
+            source_line=html.escape(str(pulse["source_line"])),
+        ),
+        unsafe_allow_html=True,
+    )
+
+    if show_actions:
+        with st.container(horizontal=True):
+            st.link_button("Open Charts", "/Charts", icon=":material/candlestick_chart:", width="stretch")
+            st.link_button("Run Market Scan", "/Market_Scan", icon=":material/radar:", width="stretch")
+            st.link_button("Study Market pulse", "/Learn?track=Market%20pulse", icon=":material/school:", width="stretch")
+
+
 def price_audit_frame(
     ticker: str,
     history: pd.DataFrame,
@@ -4492,6 +4835,26 @@ def chart_timestamp_seconds(value: Any) -> int:
     return int(timestamp.timestamp())
 
 
+def chart_timeframe_label(chart_df: pd.DataFrame) -> str:
+    if chart_df is None or len(chart_df.index) < 2:
+        return "chart"
+    try:
+        index_series = pd.Series(pd.DatetimeIndex(chart_df.index), index=chart_df.index)
+        median_step = index_series.diff().dropna().median()
+        if pd.isna(median_step):
+            return "chart"
+        minutes = max(int(round(median_step / pd.Timedelta(minutes=1))), 1)
+        if minutes < 60:
+            return f"{minutes}m"
+        hours = minutes / 60
+        if hours < 24:
+            return f"{int(hours)}h" if hours.is_integer() else f"{hours:.1f}h"
+        days = max(int(round(hours / 24)), 1)
+        return f"{days}D"
+    except Exception:
+        return "chart"
+
+
 def chart_series_points(chart_df: pd.DataFrame, column: str) -> list[dict[str, float | int]]:
     if column not in chart_df.columns:
         return []
@@ -4567,7 +4930,13 @@ def lightweight_chart_payload(
     levels = chart_trade_levels(analysis)
     price_lines: list[dict[str, Any]] = []
 
-    def add_price_line(label: str, value: float | None, color: str, style: str = "dashed") -> None:
+    def add_price_line(
+        label: str,
+        value: float | None,
+        color: str,
+        style: str = "dashed",
+        axis_label: bool = True,
+    ) -> None:
         if value is not None and math.isfinite(float(value)):
             price_lines.append(
                 {
@@ -4575,18 +4944,18 @@ def lightweight_chart_payload(
                     "price": round(float(value), 4),
                     "color": color,
                     "style": style,
+                    "axisLabel": axis_label,
                 }
             )
 
-    add_price_line("Current", safe_float(current_price), palette["text"], "solid")
     if show_buy_zone:
-        add_price_line("Buy low", levels["buy_low"], palette["cyan"])
-        add_price_line("Buy high", levels["buy_high"], palette["cyan"])
+        add_price_line("Buy low", levels["buy_low"], palette["cyan"], axis_label=False)
+        add_price_line("Buy high", levels["buy_high"], palette["cyan"], axis_label=False)
     if show_plan_levels:
-        add_price_line("Entry", levels["entry"], up)
-        add_price_line("Stop", levels["stop"], down)
-        add_price_line("TP1", levels["target_1"], up)
-        add_price_line("TP2", levels["target_2"], "#86EFAC")
+        add_price_line("Buy", levels["entry"], up)
+        add_price_line("SL", levels["stop"], down)
+        add_price_line("TP", levels["target_1"], up)
+        add_price_line("TP2", levels["target_2"], "#86EFAC", axis_label=False)
 
     markers: list[dict[str, Any]] = []
     if candles:
@@ -4599,7 +4968,7 @@ def lightweight_chart_payload(
                     "position": "belowBar",
                     "color": up,
                     "shape": "arrowUp",
-                    "text": "AI entry watch",
+                    "text": "Entry",
                 }
             )
         elif show_ai_signals and status == "Below stop":
@@ -4609,7 +4978,7 @@ def lightweight_chart_payload(
                     "position": "aboveBar",
                     "color": down,
                     "shape": "square",
-                    "text": f"Stop broken {money(levels['stop'])}",
+                    "text": "Stop",
                 }
             )
 
@@ -4622,13 +4991,17 @@ def lightweight_chart_payload(
 
     level_summary = [
         {"label": "Entry", "value": money(levels["entry"]), "tone": "up", "detail": "trigger"},
-        {"label": "Stop", "value": money(levels["stop"]), "tone": "down", "detail": "invalid"},
-        {"label": "TP1", "value": money(levels["target_1"]), "tone": "up", "detail": "trim"},
+        {"label": "SL", "value": money(levels["stop"]), "tone": "down", "detail": "invalid"},
+        {"label": "TP", "value": money(levels["target_1"]), "tone": "up", "detail": "trim"},
         {"label": "TP2", "value": money(levels["target_2"]), "tone": "up", "detail": "runner"},
     ]
 
     return {
         "ticker": str(analysis.get("Ticker", "Stock")),
+        "company": str(analysis.get("Company", analysis.get("Ticker", "Stock"))),
+        "exchange": str(analysis.get("Exchange", "")),
+        "timeframe": chart_timeframe_label(clean_df),
+        "lastColor": up if candles and candles[-1]["close"] >= candles[-1]["open"] else down,
         "candles": candles,
         "volume": volume,
         "ema9": chart_series_points(clean_df, "EMA 9") if show_ema9 else [],
@@ -4638,7 +5011,7 @@ def lightweight_chart_payload(
         "markers": markers,
         "buyZone": buy_zone,
         "levelSummary": level_summary if show_plan_levels else [],
-        "visibleCount": int(visible_candles or min(len(candles), 390)),
+        "visibleCount": int(visible_candles or min(len(candles), 60)),
         "activeEndIndex": int(active_end_index),
         "palette": palette,
         "status": live_status(analysis),
@@ -4667,13 +5040,14 @@ def render_lightweight_trading_chart(
 <div class="tw-shell">
   <div class="tw-toolbar">
     <div class="tw-brand">
-      <strong>TradingView-style candles</strong>
+      <strong id="tw-symbol">__TICKER__</strong>
       <span id="tw-status"></span>
       <a class="tw-credit" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">Lightweight Charts by TradingView</a>
     </div>
     <div class="tw-controls">
       <div class="tw-buttons" aria-label="Chart window buttons">
         <span>Window</span>
+        <button data-range="15" title="Show 15 candles">15</button>
         <button data-range="30" title="Show 30 candles">30</button>
         <button data-range="45" title="Show 45 candles">45</button>
         <button data-range="90" title="Show 90 candles">90</button>
@@ -4713,6 +5087,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   const legend = document.getElementById("tw-legend");
   const planbar = document.getElementById("tw-planbar");
   const status = document.getElementById("tw-status");
+  const symbol = document.getElementById("tw-symbol");
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
@@ -4729,7 +5104,13 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     minute: "2-digit"
   });
 
-  status.textContent = payload.ticker + " | " + payload.status;
+  symbol.textContent = payload.ticker;
+  status.textContent = [
+    payload.company && payload.company !== payload.ticker ? payload.company : "",
+    payload.timeframe || "",
+    payload.exchange || "",
+    payload.status || ""
+  ].filter(Boolean).join(" · ");
   if (payload.levelSummary && payload.levelSummary.length) {
     planbar.innerHTML = payload.levelSummary.map((item) =>
       "<div class='tw-level-chip tw-level-" + esc(item.tone) + "'>" +
@@ -4823,7 +5204,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     priceFormat: { type: "price", precision: 2, minMove: 0.01 },
     lastValueVisible: true,
     priceLineVisible: true,
-    priceLineColor: palette.text,
+    priceLineColor: payload.lastColor || palette.text,
     priceLineWidth: 1,
     priceLineStyle: LightweightCharts.LineStyle.Dotted,
     autoscaleInfoProvider: (original) => {
@@ -4864,11 +5245,17 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     const series = chart.addLineSeries({
       color,
       lineWidth: width,
-      title,
+      title: "",
       priceLineVisible: false,
-      lastValueVisible: false
+      lastValueVisible: false,
+      autoscaleInfoProvider: () => null
     });
     series.setData(data);
+    series.applyOptions({
+      priceLineVisible: false,
+      lastValueVisible: false,
+      title: ""
+    });
   };
   addLineSeries(payload.ema9, palette.blue, "EMA 9", 2);
   addLineSeries(payload.ema20, palette.violet, "EMA 20", 2);
@@ -4880,7 +5267,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
       color: line.color,
       lineWidth: line.style === "solid" ? 2 : 1,
       lineStyle: line.style === "solid" ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
-      axisLabelVisible: true,
+      axisLabelVisible: line.axisLabel !== false,
       title: line.title
     });
   });
@@ -4917,9 +5304,9 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     if (!Number.isFinite(yHigh) || !Number.isFinite(yLow)) return;
     const top = Math.min(yHigh, yLow);
     const height = Math.max(Math.abs(yLow - yHigh), 2);
-    wickContext.fillStyle = "rgba(34, 211, 238, 0.10)";
+    wickContext.fillStyle = "rgba(34, 211, 238, 0.045)";
     wickContext.fillRect(0, top, size.width, height);
-    wickContext.strokeStyle = "rgba(34, 211, 238, 0.56)";
+    wickContext.strokeStyle = "rgba(34, 211, 238, 0.46)";
     wickContext.lineWidth = 1;
     wickContext.setLineDash([5, 5]);
     wickContext.beginPath();
@@ -4942,15 +5329,37 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     wickContext.stroke();
   };
 
-  const drawSmallBody = (x, y, color, spacing) => {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    const half = Math.max(3, Math.min(10, spacing * 0.42));
+  const roundedRectPath = (ctx, x, y, width, height, radius) => {
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(x, y, width, height, radius);
+      return;
+    }
+    const safeRadius = Math.min(radius, width / 2, height / 2);
+    ctx.moveTo(x + safeRadius, y);
+    ctx.lineTo(x + width - safeRadius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+    ctx.lineTo(x + width, y + height - safeRadius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+    ctx.lineTo(x + safeRadius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+    ctx.lineTo(x, y + safeRadius);
+    ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+  };
+
+  const drawEnhancedBody = (x, openY, closeY, color, spacing) => {
+    if (!Number.isFinite(x) || !Number.isFinite(openY) || !Number.isFinite(closeY)) return;
+    const bodyWidth = Math.max(3.2, Math.min(16, spacing * 0.72));
+    const left = Math.round(x - bodyWidth / 2) + 0.5;
+    const top = Math.round(Math.min(openY, closeY)) + 0.5;
+    const bodyHeight = Math.max(Math.abs(closeY - openY), 2.8);
+    wickContext.shadowColor = "rgba(0, 0, 0, 0.18)";
+    wickContext.shadowBlur = 1.2;
+    wickContext.fillStyle = color;
     wickContext.strokeStyle = color;
-    wickContext.lineWidth = Math.max(2.4, Math.min(4, spacing * 0.20));
-    wickContext.lineCap = "round";
+    wickContext.lineWidth = 1;
     wickContext.beginPath();
-    wickContext.moveTo(x - half, y);
-    wickContext.lineTo(x + half, y);
+    roundedRectPath(wickContext, left, top, bodyWidth, bodyHeight, Math.min(2.4, bodyWidth / 2));
+    wickContext.fill();
     wickContext.stroke();
   };
 
@@ -4959,10 +5368,8 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     const size = resizeWickCanvas();
     wickContext.clearRect(0, 0, size.width, size.height);
     const spacing = visibleSpacing(size);
-    const wickWidth = spacing >= 18 ? 2.8 : spacing >= 10 ? 2.2 : spacing >= 6 ? 1.65 : 1.25;
+    const wickWidth = spacing >= 18 ? 3.1 : spacing >= 10 ? 2.45 : spacing >= 6 ? 1.9 : 1.45;
     drawBuyZone(size);
-    wickContext.shadowColor = "rgba(0, 0, 0, 0.18)";
-    wickContext.shadowBlur = 1.5;
     const range = chart.timeScale().getVisibleLogicalRange();
     const from = Math.max(0, Math.floor((range ? range.from : 0) - 8));
     const to = Math.min(payload.candles.length - 1, Math.ceil((range ? range.to : payload.candles.length - 1) + 8));
@@ -4974,12 +5381,11 @@ __LIGHTWEIGHT_CHARTS_LOADER__
       const yLow = candleSeries.priceToCoordinate(bar.low);
       const yBodyTop = candleSeries.priceToCoordinate(Math.max(bar.open, bar.close));
       const yBodyBottom = candleSeries.priceToCoordinate(Math.min(bar.open, bar.close));
+      const yOpen = candleSeries.priceToCoordinate(bar.open);
+      const yClose = candleSeries.priceToCoordinate(bar.close);
       const color = bar.close >= bar.open ? "#00C805" : "#FF375F";
-      drawSegment(x, yHigh, yBodyTop, color, wickWidth);
-      drawSegment(x, yBodyBottom, yLow, color, wickWidth);
-      if (Number.isFinite(yBodyTop) && Number.isFinite(yBodyBottom) && Math.abs(yBodyTop - yBodyBottom) < 2.4) {
-        drawSmallBody(x, yBodyTop, color, spacing);
-      }
+      drawSegment(x, yHigh, yLow, color, wickWidth);
+      drawEnhancedBody(x, yOpen, yClose, color, spacing);
     }
     wickContext.shadowBlur = 0;
   };
@@ -5050,7 +5456,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     }
     const count = Math.max(Number(range) || 90, 10);
     activeRange = String(range);
-    const spacing = count <= 30 ? 28 : count <= 45 ? 24 : count <= 90 ? 18 : count <= 180 ? 13 : 9;
+    const spacing = count <= 15 ? 34 : count <= 30 ? 28 : count <= 45 ? 24 : count <= 90 ? 18 : count <= 180 ? 13 : 9;
     chart.timeScale().applyOptions({ barSpacing: spacing, minBarSpacing: 4 });
     const anchorSeed = anchorValue ?? payload.activeEndIndex ?? payload.candles.length - 1;
     const anchor = Math.min(Math.max(Number(anchorSeed), 0), payload.candles.length - 1);
@@ -5072,7 +5478,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     const range = chart.timeScale().getVisibleLogicalRange();
     if (!range) return;
     const center = (range.from + range.to) / 2;
-    const span = Math.max((range.to - range.from) * factor, 8);
+    const span = Math.max((range.to - range.from) * factor, 12);
     applyLogicalRange(center - span / 2, center + span / 2);
     markActive("");
   };
@@ -5112,7 +5518,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
   }
   .tw-shell {
     height: __CHART_HEIGHT__px;
-    background: linear-gradient(180deg, __PANEL__ 0%, __PANEL_ALT__ 100%);
+    background: __PANEL__;
     border: 1px solid __BORDER__;
     border-radius: 8px;
     overflow: hidden;
@@ -5127,9 +5533,9 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 8px 12px;
     border-bottom: 1px solid __BORDER__;
-    background: __PANEL_ALT__;
+    background: __PANEL__;
   }
   .tw-brand {
     display: flex;
@@ -5139,7 +5545,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     color: __TEXT__;
   }
   .tw-brand strong {
-    font-size: 14px;
+    font-size: 15px;
     letter-spacing: 0;
   }
   .tw-brand span {
@@ -5228,14 +5634,14 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     background: __PANEL__;
   }
   .tw-planbar {
-    min-height: 40px;
+    min-height: 38px;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 7px;
     padding: 7px 12px;
     border-bottom: 1px solid __BORDER__;
-    background: color-mix(in srgb, __PANEL_ALT__ 72%, __PANEL__ 28%);
+    background: __PANEL__;
   }
   .tw-level-chip {
     min-width: 116px;
@@ -5276,6 +5682,7 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     position: relative;
     height: calc(100% - 122px);
     background: __PANEL__;
+    border-top: 1px solid rgba(148, 163, 184, 0.08);
   }
   .tw-chart {
     height: 100%;
@@ -5704,8 +6111,18 @@ def render_candlestick_chart(
     chart_df["EMA 9"] = chart_df["Close"].ewm(span=9, adjust=False).mean()
     chart_df["EMA 20"] = chart_df["Close"].ewm(span=20, adjust=False).mean()
     typical_price = (chart_df["High"] + chart_df["Low"] + chart_df["Close"]) / 3
-    cumulative_volume = chart_df["Volume"].replace(0, np.nan).cumsum()
-    chart_df["VWAP"] = (typical_price * chart_df["Volume"]).cumsum() / cumulative_volume
+    vwap_volume = chart_df["Volume"].replace(0, np.nan)
+    index_series = pd.Series(chart_df.index, index=chart_df.index)
+    median_step = index_series.diff().dropna().median() if len(index_series) > 1 else pd.NaT
+    is_intraday = pd.notna(median_step) and median_step < pd.Timedelta(hours=20)
+    if is_intraday:
+        session_key = pd.Series(pd.DatetimeIndex(chart_df.index).date, index=chart_df.index)
+        cumulative_price_volume = (typical_price * chart_df["Volume"]).groupby(session_key).cumsum()
+        cumulative_volume = vwap_volume.groupby(session_key).cumsum()
+    else:
+        cumulative_price_volume = (typical_price * chart_df["Volume"]).cumsum()
+        cumulative_volume = vwap_volume.cumsum()
+    chart_df["VWAP"] = cumulative_price_volume / cumulative_volume
     chart_df["VWAP"] = chart_df["VWAP"].ffill().bfill()
     chart_df["Time"] = chart_df.index
     chart_df["Direction"] = np.where(chart_df["Close"] >= chart_df["Open"], "Up", "Down")
@@ -6075,6 +6492,7 @@ def render_live_tracker_body(tickers: tuple[str, ...], include_scan: bool, fragm
             ("In buy zone", str(buy_zone_hits), "good"),
         ]
     )
+    render_market_pulse(df, context="live_tracker")
     render_action_queue(df, key="live_tracker_action_queue")
     render_data_health_summary(df)
 
@@ -6136,6 +6554,7 @@ def page_dashboard() -> None:
             ("Top RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
+    render_market_pulse(df, context="dashboard")
     render_workflow_cockpit(best, str(best.get("Data source", "n/a")), context="dashboard")
     render_action_queue(df, key="dashboard_action_queue")
 
@@ -6188,6 +6607,7 @@ def page_daily_gameplan() -> None:
             ("RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
+    render_market_pulse(df, context="daily_gameplan")
     render_workflow_cockpit(best, str(best.get("Data source", "n/a")), context="daily_gameplan")
     render_action_queue(df, key="gameplan_action_queue")
     render_data_health_summary(df)
@@ -6242,6 +6662,7 @@ def page_scanner() -> None:
                 ("Best score", f"{int(top['AI score'])}/100", "hot"),
             ]
         )
+        render_market_pulse(df, context="scanner")
         render_workflow_cockpit(top, str(top.get("Data source", "n/a")), context="scanner")
         render_action_queue(df, key="scanner_action_queue")
         render_data_health_summary(df)
@@ -6351,6 +6772,7 @@ def page_market_scan() -> None:
             ("Best gain", pct(df.iloc[0]["Daily gain %"]) if not df.empty else "n/a", "good"),
         ]
     )
+    render_market_pulse(df, context="market_scan")
     if not df.empty:
         top_scan = df.iloc[0].to_dict()
         render_workflow_cockpit(top_scan, str(top_scan.get("Data source", "n/a")), context="market_scan")
@@ -6401,6 +6823,8 @@ def page_charts() -> None:
         period = str(period or period_options[0])
 
         candle_windows = {
+            "15": 15,
+            "30": 30,
             "45": 45,
             "90": 90,
             "180": 180,
@@ -6408,7 +6832,7 @@ def page_charts() -> None:
             "All": None,
         }
         control_bottom = st.columns([1.75, 1.85, 0.62, 0.72, 0.62, 0.62, 0.68], vertical_alignment="bottom")
-        default_window = "90" if interval == "1m" else "180"
+        default_window = "45" if interval == "1m" else "180"
         window_label = control_bottom[0].segmented_control(
             "Visible candles",
             list(candle_windows),
@@ -6426,7 +6850,7 @@ def page_charts() -> None:
         st.session_state.chart_engine = chart_engine
         live_toggle = control_bottom[2].toggle("Live", value=True, key="chart_live_enabled")
         auto_refresh = control_bottom[3].toggle("Refresh", value=True, key="chart_auto_refresh_enabled")
-        control_bottom[4].toggle("EMAs", value=True, key="chart_layer_emas")
+        control_bottom[4].toggle("EMAs", value=False, key="chart_layer_emas")
         control_bottom[5].toggle("VWAP", value=True, key="chart_layer_vwap")
         control_bottom[6].toggle("Levels", value=True, key="chart_layer_ai_signals")
         provisional_prefer_live = bool(live_toggle) or interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
@@ -6436,8 +6860,8 @@ def page_charts() -> None:
         )
     render_data_stack_panel(compact=True)
 
-    st.session_state.chart_layer_ema9 = bool(st.session_state.get("chart_layer_emas", True))
-    st.session_state.chart_layer_ema20 = bool(st.session_state.get("chart_layer_emas", True))
+    st.session_state.chart_layer_ema9 = bool(st.session_state.get("chart_layer_emas", False))
+    st.session_state.chart_layer_ema20 = bool(st.session_state.get("chart_layer_emas", False))
     st.session_state.chart_layer_buy_zone = bool(st.session_state.get("chart_layer_ai_signals", True))
     st.session_state.chart_layer_plan_levels = bool(st.session_state.get("chart_layer_ai_signals", True))
 
@@ -6684,6 +7108,7 @@ def page_learn() -> None:
         "Chart reading",
         "Risk",
         "Workflow cockpit",
+        "Market pulse",
         "AI ladder",
         "Data sources",
         "News",
@@ -6750,6 +7175,7 @@ def page_learn() -> None:
                     {"Field": "Float", "What it means": "Roughly how many shares can trade publicly.", "Beginner move": "Low float can move fast, but it can also reverse fast."},
                     {"Field": "Price audit", "What it means": "The app checks source, time, and whether price feeds disagree.", "Beginner move": "If it says mismatch or fallback, use the stock for study only."},
                     {"Field": "Data confidence", "What it means": "A quick trust label based on source, quote age, fallback data, and feed agreement.", "Beginner move": "High confidence is cleaner for paper practice. Verify first means slow down and check another source."},
+                    {"Field": "Market pulse", "What it means": "The app reads the whole scan and summarizes data trust, active setups, top stock, and risk flags.", "Beginner move": "Use it to decide whether to chart the leader, wait, verify data, or scan another batch."},
                     {"Field": "AI score", "What it means": "A checklist score based on the app's rules.", "Beginner move": "Use it to focus your study, not as a profit promise."},
                     {"Field": "Workflow cockpit", "What it means": "The panel that tells you the next best page/action based on the current stock.", "Beginner move": "Use it as your map: scan, verify, chart, plan, approve, journal."},
                     {"Field": "AI ladder", "What it means": "A step-by-step read of data, setup, entry, stop, and take-profit levels.", "Beginner move": "Read the ladder in order before staging any paper order."},
@@ -7038,6 +7464,50 @@ def page_learn() -> None:
             st.markdown("**Beginner rule**")
             st.write("If the cockpit says verify, wait, stand down, or keep scanning, that is still a decision. The best beginner trade is often no trade.")
 
+    elif track == "Market pulse":
+        st.info(
+            "Market pulse is the fast read before you stare at individual candles. It tells you whether the scan is clean enough to study seriously or whether you should verify, wait, or keep scanning.",
+            icon=":material/monitoring:",
+        )
+        sample_df = default_scan(prefer_live=False)
+        render_market_pulse(sample_df, context="learn_market_pulse", show_actions=False)
+
+        cols = st.columns(3)
+        with cols[0]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**1. Start with data trust**")
+                st.write("- High confidence or usable for paper means the row is cleaner for practice.")
+                st.write("- Verify first means compare another source before trusting levels.")
+                st.write("- Practice data means learning only, not live trading truth.")
+        with cols[1]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**2. Read setup pressure**")
+                st.write("- Active means breakout trigger or buy zone.")
+                st.write("- Waiting means near buy zone or momentum active.")
+                st.write("- Quiet means keep scanning or study instead of forcing trades.")
+        with cols[2]:
+            with st.container(border=True, height="stretch"):
+                st.markdown("**3. Respect risk flags**")
+                st.write("- Fallback rows, no quotes, below-stop rows, and low RVOL slow you down.")
+                st.write("- A risk flag is a reason to verify, not a reason to panic.")
+                st.write("- The best next move box tells you the page to open next.")
+
+        with st.container(border=True):
+            st.markdown("**How to use market pulse during the day**")
+            pulse_steps = pd.DataFrame(
+                [
+                    {"Pulse says": "Paper setups are forming", "Do this": "Open Charts for the top stock and verify candles, news, entry, stop, and target.", "Do not do this": "Approve a paper order without reading the ladder."},
+                    {"Pulse says": "Good watchlist, wait for the trigger", "Do this": "Keep the chart open and wait for price to reach the planned level.", "Do not do this": "Buy early because the stock feels strong."},
+                    {"Pulse says": "Verify prices before trusting this scan", "Do this": "Compare the price audit, source time, broker quote, and news.", "Do not do this": "Assume free data is perfect."},
+                    {"Pulse says": "Quiet or mixed scan", "Do this": "Scan another batch, read news, or study Learn.", "Do not do this": "Force a paper trade just to be active."},
+                ]
+            )
+            st.dataframe(pulse_steps, width="stretch", hide_index=True)
+
+        with st.container(border=True):
+            st.markdown("**Beginner rule**")
+            st.write("Market pulse answers one question: is this a chart-review moment, a wait moment, a verify moment, or a study moment?")
+
     elif track == "AI ladder":
         st.info(
             "The AI ladder is the easiest way to slow down before a paper order. Read every step in order.",
@@ -7140,6 +7610,7 @@ def page_learn() -> None:
             {"term": "Runner target", "category": "Risk", "answer": "A second target for any remaining shares if the move keeps working.", "example": "A runner still needs a written exit instead of hoping."},
             {"term": "R multiple", "category": "Risk", "answer": "Reward or loss measured against the planned risk.", "example": "If you risk $20 and make $40, that is +2R."},
             {"term": "RVOL", "category": "Scanner", "answer": "Relative volume. It compares today's volume with normal volume and shows whether attention is unusual.", "example": "A 5x RVOL stock is trading far more activity than normal."},
+            {"term": "Market pulse", "category": "Scanner", "answer": "The scan-wide summary that shows data trust, active setups, top stock, scan power, and risk flags.", "example": "If pulse says verify first, a beginner checks the chart and another quote before trusting levels."},
             {"term": "Float", "category": "Scanner", "answer": "Shares available for public trading. Lower float can move faster, but it can also be more dangerous.", "example": "A 7M float stock can move sharply when demand spikes."},
             {"term": "Gapper", "category": "Scanner", "answer": "A stock trading much higher than yesterday's close.", "example": "The app looks for at least a 10% daily move in the small-cap playbook."},
             {"term": "Liquidity", "category": "Scanner", "answer": "How easy it is to buy or sell without moving the price too much.", "example": "Thin liquidity can make exits ugly even if the chart looked good."},
@@ -7320,6 +7791,7 @@ def page_learn() -> None:
                 {"Term": "SIP feed", "Meaning": "A consolidated exchange data feed across major US markets.", "Why it matters": "It is closer to full professional real-time data, but it usually costs money because exchanges charge fees."},
                 {"Term": "Delayed quote", "Meaning": "A price that may be behind the current market.", "Why it matters": "A delayed quote can make entries, stops, and targets look safer than they really are."},
                 {"Term": "Data confidence", "Meaning": "The app's trust label based on source, quote age, fallback data, and price mismatch risk.", "Why it matters": "It tells beginners when to slow down and verify before using a setup."},
+                {"Term": "Market pulse", "Meaning": "The scan-wide read of data trust, active setups, top stock, scan power, and risk flags.", "Why it matters": "It helps beginners decide whether to chart the leader, wait, verify data, or scan another batch."},
                 {"Term": "Workflow cockpit", "Meaning": "The app's guided next-step panel for moving from scan to chart to plan to journal.", "Why it matters": "It keeps beginners from skipping verification and risk checks."},
                 {"Term": "AI ladder", "Meaning": "The app's step-by-step paper-trade review: data, setup, entry, stop, and take profit.", "Why it matters": "It gives beginners an order to follow instead of reacting emotionally to candles."},
                 {"Term": "Setup check", "Meaning": "A quick count of how many scanner rules are lining up.", "Why it matters": "A strong candle is not enough if the full setup is weak."},

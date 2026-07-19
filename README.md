@@ -50,7 +50,7 @@ When those keys are present, the app tries Alpaca IEX candles for regular stocks
 
 The premium candle chart uses TradingView Lightweight Charts from `assets/lightweight-charts.standalone.production.js`, with an online fallback if that local file is missing.
 
-The TradingView-style chart includes window presets, zoom in/out, back/forward, latest, fit-to-context, a buy-zone band, and entry/stop/take-profit chips. Candles stay green for up candles and red for down candles.
+The TradingView-style chart includes 15/30/45/90/180/1-day window presets, zoom in/out, back/forward, latest, fit-to-context, a buy-zone band, and entry/stop/take-profit chips. Candles stay green for up candles and red for down candles. The chart prioritizes candle autoscaling, resets VWAP by intraday session, and draws sharper candle bodies/wicks so one-minute bars stay readable when zoomed in.
 
 ## Data confidence
 
@@ -74,6 +74,14 @@ The app includes a guided workflow cockpit that tells users the next step for th
 
 ```text
 /Learn?track=Workflow%20cockpit
+```
+
+## Market pulse
+
+Dashboard, Daily Gameplan, Scanner, Market Scan, and Live Tracker include a scan-wide market pulse panel. It summarizes data trust, active paper setups, the top stock, average RVOL, source mix, risk flags, and the best next move for beginners. The Learn page includes a matching lesson at:
+
+```text
+/Learn?track=Market%20pulse
 ```
 
 ## Paper approval gate
