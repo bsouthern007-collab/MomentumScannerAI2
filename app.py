@@ -3196,6 +3196,101 @@ def backtest_strategy(
     }
 
 
+def backtest_review_snapshot(result: dict[str, Any]) -> dict[str, Any]:
+    trades = result.get("trades", pd.DataFrame())
+    if not isinstance(trades, pd.DataFrame) or trades.empty:
+        return {
+            "expectancy_r": 0.0,
+            "avg_win_r": 0.0,
+            "avg_loss_r": 0.0,
+            "profit_factor": 0.0,
+            "max_drawdown_r": 0.0,
+            "best_r": 0.0,
+            "worst_r": 0.0,
+            "strictness": "No signals",
+            "equity": pd.DataFrame(columns=["Date", "Cumulative R"]),
+            "coaching": [
+                "No trades matched the settings. Lower the gap/RVOL filters, use a longer period, or test another stock.",
+            ],
+        }
+
+    display = trades.copy()
+    display["Date"] = pd.to_datetime(display["Date"], errors="coerce")
+    r_mult = pd.to_numeric(display["R multiple"], errors="coerce").fillna(0)
+    wins = r_mult[r_mult > 0]
+    losses = r_mult[r_mult < 0]
+    gross_win = float(wins.sum()) if len(wins) else 0.0
+    gross_loss = abs(float(losses.sum())) if len(losses) else 0.0
+    profit_factor = gross_win / gross_loss if gross_loss else gross_win
+    cumulative = r_mult.cumsum()
+    running_peak = cumulative.cummax()
+    drawdown = cumulative - running_peak
+    max_drawdown = float(drawdown.min()) if len(drawdown) else 0.0
+    trade_count = int(len(display))
+    if trade_count < 4:
+        strictness = "Very selective"
+    elif trade_count <= 18:
+        strictness = "Balanced sample"
+    else:
+        strictness = "Very active"
+
+    coaching: list[str] = []
+    expectancy = float(r_mult.mean()) if len(r_mult) else 0.0
+    avg_win = float(wins.mean()) if len(wins) else 0.0
+    avg_loss = float(losses.mean()) if len(losses) else 0.0
+    win_rate = len(wins) / max(len(r_mult), 1) * 100
+    if expectancy > 0:
+        coaching.append("This test has positive average R. Next check whether the trade count is large enough to trust.")
+    else:
+        coaching.append("This test has negative average R. Tighten entries, reduce hold time, or raise quality filters.")
+    if trade_count < 5:
+        coaching.append("Sample size is small. Treat this as a clue, not proof.")
+    if trade_count > 25:
+        coaching.append("This rule fires often. Add a chart-quality or news filter before trusting it.")
+    if profit_factor < 1 and trade_count:
+        coaching.append("Profit factor is under 1. Losses are larger than wins in this sample.")
+    if max_drawdown <= -3:
+        coaching.append("Drawdown went past -3R. A beginner should lower risk or improve filters before using this rule.")
+    if win_rate < 40 and avg_win <= abs(avg_loss):
+        coaching.append("Low win rate needs bigger winners than losers. This sample does not show that yet.")
+
+    equity = display[["Date"]].copy()
+    equity["Cumulative R"] = cumulative
+    return {
+        "expectancy_r": expectancy,
+        "avg_win_r": avg_win,
+        "avg_loss_r": avg_loss,
+        "profit_factor": profit_factor,
+        "max_drawdown_r": max_drawdown,
+        "best_r": float(r_mult.max()) if len(r_mult) else 0.0,
+        "worst_r": float(r_mult.min()) if len(r_mult) else 0.0,
+        "strictness": strictness,
+        "equity": equity,
+        "coaching": list(dict.fromkeys(coaching))[:4],
+    }
+
+
+def render_backtest_review_panel(result: dict[str, Any]) -> None:
+    review = backtest_review_snapshot(result)
+    with st.container(border=True):
+        st.markdown("**Backtest read**")
+        st.caption("A simplified historical check. Use it to learn whether a rule is worth studying, not to promise future results.")
+        cols = st.columns(4)
+        cols[0].metric("Expectancy", f"{review['expectancy_r']:.2f}R", border=True)
+        cols[1].metric("Profit factor", f"{review['profit_factor']:.2f}", border=True)
+        cols[2].metric("Max drawdown", f"{review['max_drawdown_r']:.2f}R", border=True)
+        cols[3].metric("Signal pace", str(review["strictness"]), border=True)
+        cols = st.columns([1, 1, 1.4])
+        cols[0].metric("Best trade", f"{review['best_r']:.2f}R", border=True)
+        cols[1].metric("Worst trade", f"{review['worst_r']:.2f}R", border=True)
+        with cols[2]:
+            for item in review["coaching"]:
+                st.caption(item)
+        equity = review["equity"]
+        if not equity.empty:
+            st.line_chart(equity, x="Date", y="Cumulative R", height=180)
+
+
 def theme_palette(mode: str | None = None) -> dict[str, str]:
     mode = (mode or st.session_state.get("display_mode", "Dark")).lower()
     if mode == "light":
@@ -9079,15 +9174,20 @@ def page_backtester() -> None:
     cols[2].metric("Average gain", pct(summary["Average gain %"]))
     cols[3].metric("Average R", f"{summary['Average R']:.2f}R")
 
+    render_backtest_review_panel(result)
+
     trades = result["trades"]
     if trades.empty:
         st.info("No completed backtest trades matched those settings.")
     else:
+        trades = trades.copy()
+        trades["Date"] = pd.to_datetime(trades["Date"], errors="coerce")
         st.dataframe(
             trades,
             width="stretch",
             hide_index=True,
             column_config={
+                "Date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
                 "Entry": st.column_config.NumberColumn("Entry", format="$%.2f"),
                 "Exit": st.column_config.NumberColumn("Exit", format="$%.2f"),
                 "Stop": st.column_config.NumberColumn("Stop", format="$%.2f"),
