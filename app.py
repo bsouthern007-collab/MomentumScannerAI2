@@ -91,17 +91,17 @@ AI_COMPANION_CSS = """
   right: 22px;
   bottom: 24px;
   z-index: 2147483000;
-  width: min(310px, calc(100vw - 28px));
+  width: min(336px, calc(100vw - 28px));
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
   align-items: end;
   pointer-events: none;
   user-select: none;
 }
 .pet-shell.pet-focus {
-  width: min(370px, calc(100vw - 28px));
-  grid-template-columns: 116px minmax(0, 1fr);
+  width: min(392px, calc(100vw - 28px));
+  grid-template-columns: 124px minmax(0, 1fr);
 }
 .pet-shell.pet-hidden {
   display: none;
@@ -178,6 +178,7 @@ AI_COMPANION_CSS = """
   color: var(--pet-text);
   font-size: 13px;
   line-height: 1.28;
+  min-height: 49px;
 }
 .pet-controls {
   display: flex;
@@ -187,13 +188,15 @@ AI_COMPANION_CSS = """
 .pet-control {
   display: grid;
   place-items: center;
-  width: 26px;
+  min-width: 36px;
   height: 24px;
   border: 1px solid var(--pet-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, .04);
   color: var(--pet-muted);
-  font-size: 12px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 850;
   cursor: pointer;
 }
 .pet-control:hover {
@@ -202,13 +205,13 @@ AI_COMPANION_CSS = """
 }
 .pet-stage {
   pointer-events: auto;
-  width: 96px;
-  height: 132px;
+  width: 104px;
+  height: 144px;
   position: relative;
   cursor: grab;
   touch-action: none;
   filter: drop-shadow(0 18px 28px rgba(0, 0, 0, .36));
-  animation: pet-breathe 2.9s ease-in-out infinite;
+  animation: pet-breathe 3.8s ease-in-out infinite;
 }
 .pet-focus .pet-stage {
   transform-origin: bottom center;
@@ -219,29 +222,52 @@ AI_COMPANION_CSS = """
 }
 .pet-shadow {
   position: absolute;
-  left: 22px;
+  left: 21px;
   bottom: 0;
-  width: 54px;
-  height: 13px;
+  width: 62px;
+  height: 14px;
   border-radius: 999px;
   background: rgba(0, 0, 0, .32);
   filter: blur(2px);
-  animation: pet-shadow 2.9s ease-in-out infinite;
+  animation: pet-shadow 3.8s ease-in-out infinite;
 }
 .pet-body {
   position: absolute;
-  left: 18px;
-  bottom: 12px;
-  width: 60px;
-  height: 70px;
-  border-radius: 24px 24px 18px 18px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--pet-accent) 28%, #101821) 0%, #101821 70%);
+  left: 17px;
+  bottom: 14px;
+  width: 70px;
+  height: 76px;
+  border-radius: 28px 28px 20px 20px;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(255, 255, 255, .18), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--pet-accent) 28%, #101821) 0%, #101821 72%);
   border: 3px solid var(--pet-accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), inset 0 -20px 28px rgba(0, 0, 0, .24);
+  overflow: hidden;
+}
+.pet-chest {
+  position: absolute;
+  left: 11px;
+  top: 12px;
+  width: 48px;
+  height: 38px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02));
+}
+.pet-belt {
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  bottom: 16px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--pet-accent) 62%, #293546), transparent);
 }
 .pet-core {
   position: absolute;
-  left: 18px;
-  top: 20px;
+  left: 23px;
+  top: 19px;
   width: 24px;
   height: 24px;
   border-radius: 999px;
@@ -263,21 +289,59 @@ AI_COMPANION_CSS = """
 }
 .pet-head {
   position: absolute;
-  left: 10px;
-  bottom: 72px;
-  width: 76px;
-  height: 58px;
-  border-radius: 24px;
-  background: linear-gradient(180deg, #172232 0%, #101821 100%);
+  left: 6px;
+  bottom: 78px;
+  width: 92px;
+  height: 66px;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--pet-accent) 28%, transparent), transparent 48%),
+    linear-gradient(180deg, #172232 0%, #101821 100%);
   border: 3px solid var(--pet-accent);
-  animation: pet-head 3.8s ease-in-out infinite;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), 0 0 22px color-mix(in srgb, var(--pet-accent) 20%, transparent);
+  animation: pet-head 5.4s ease-in-out infinite;
+}
+.pet-head:before {
+  content: "";
+  position: absolute;
+  inset: 8px 10px auto 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .17), transparent);
+}
+.pet-ear {
+  position: absolute;
+  bottom: 103px;
+  width: 16px;
+  height: 30px;
+  border-radius: 12px;
+  background: #101821;
+  border: 3px solid var(--pet-accent);
+}
+.pet-ear-left {
+  left: 0;
+  rotate: -14deg;
+}
+.pet-ear-right {
+  right: 0;
+  rotate: 14deg;
+}
+.pet-crest {
+  position: absolute;
+  left: 45px;
+  bottom: 141px;
+  width: 14px;
+  height: 20px;
+  border-radius: 999px 999px 4px 4px;
+  background: var(--pet-accent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--pet-accent) 70%, transparent);
 }
 .pet-antenna {
   position: absolute;
-  left: 46px;
-  bottom: 129px;
+  left: 50px;
+  bottom: 141px;
   width: 4px;
-  height: 20px;
+  height: 18px;
   border-radius: 999px;
   background: var(--pet-accent);
 }
@@ -294,72 +358,111 @@ AI_COMPANION_CSS = """
 }
 .pet-face {
   position: absolute;
-  left: 13px;
-  top: 14px;
-  width: 50px;
-  height: 28px;
-  border-radius: 13px;
+  left: 12px;
+  top: 13px;
+  width: 68px;
+  height: 40px;
+  border-radius: 16px;
   background: #0B1117;
   border: 1px solid rgba(148, 163, 184, .24);
+  overflow: hidden;
+}
+.pet-avatar-face {
+  position: absolute;
+  inset: -18px -7px -8px -7px;
+  width: calc(100% + 14px);
+  height: calc(100% + 26px);
+  object-fit: cover;
+  pointer-events: none;
 }
 .pet-eye {
   position: absolute;
-  top: 9px;
-  width: 8px;
-  height: 8px;
+  top: 13px;
+  width: 9px;
+  height: 9px;
   border-radius: 999px;
   background: #00C805;
   animation: pet-blink 4.8s infinite;
 }
 .pet-eye-left {
-  left: 12px;
+  left: 17px;
 }
 .pet-eye-right {
-  right: 12px;
+  right: 17px;
 }
 .pet-mouth {
   position: absolute;
-  left: 18px;
-  bottom: 6px;
-  width: 14px;
+  left: 26px;
+  bottom: 7px;
+  width: 16px;
   height: 6px;
   border-bottom: 3px solid var(--pet-muted);
   border-radius: 999px;
 }
 .pet-arm {
   position: absolute;
-  bottom: 50px;
+  bottom: 56px;
   width: 16px;
-  height: 42px;
+  height: 44px;
   border-radius: 999px;
   background: #101821;
   border: 3px solid var(--pet-accent);
   transform-origin: top center;
 }
 .pet-arm-left {
-  left: 4px;
+  left: 2px;
   rotate: 16deg;
-  animation: pet-wave-left 3.6s ease-in-out infinite;
+  animation: pet-wave-left 5.8s ease-in-out infinite;
 }
 .pet-arm-right {
-  right: 4px;
+  right: 2px;
   rotate: -16deg;
-  animation: pet-wave-right 4.2s ease-in-out infinite;
+  animation: pet-wave-right 6.2s ease-in-out infinite;
+}
+.pet-hand {
+  position: absolute;
+  bottom: 48px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pet-accent) 54%, #101821);
+  border: 2px solid #101821;
+}
+.pet-hand-left {
+  left: 0;
+}
+.pet-hand-right {
+  right: 0;
 }
 .pet-leg {
   position: absolute;
-  bottom: 5px;
-  width: 18px;
-  height: 21px;
-  border-radius: 8px;
+  bottom: 4px;
+  width: 19px;
+  height: 23px;
+  border-radius: 9px;
   background: #101821;
   border: 3px solid var(--pet-accent);
 }
 .pet-leg-left {
-  left: 27px;
+  left: 29px;
 }
 .pet-leg-right {
-  right: 27px;
+  right: 29px;
+}
+.pet-foot {
+  position: absolute;
+  bottom: 0;
+  width: 29px;
+  height: 12px;
+  border-radius: 999px;
+  background: #101821;
+  border: 2px solid var(--pet-accent);
+}
+.pet-foot-left {
+  left: 21px;
+}
+.pet-foot-right {
+  right: 21px;
 }
 .pet-spark {
   position: absolute;
@@ -383,34 +486,55 @@ AI_COMPANION_CSS = """
   animation: pet-orbit-two 5s linear infinite;
 }
 .pet-wander {
-  animation: pet-wander 12s ease-in-out infinite;
+  animation: pet-wander 24s ease-in-out infinite;
 }
 .pet-manual {
   animation: none;
 }
+.pet-style-defensive .pet-antenna,
+.pet-style-defensive .pet-crest {
+  display: none;
+}
+.pet-style-defensive .pet-head {
+  border-radius: 34px 34px 24px 24px;
+}
+.pet-style-curious .pet-crest {
+  width: 20px;
+  left: 42px;
+  border-radius: 999px;
+  opacity: .86;
+}
+.pet-style-aggressive .pet-crest {
+  width: 18px;
+  height: 31px;
+  left: 44px;
+  bottom: 136px;
+  border-radius: 3px 999px 3px 999px;
+  rotate: 12deg;
+}
 @keyframes pet-breathe {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
+  50% { transform: translateY(-4px); }
 }
 @keyframes pet-shadow {
   0%, 100% { transform: scaleX(1); opacity: .34; }
   50% { transform: scaleX(.74); opacity: .2; }
 }
 @keyframes pet-head {
-  0%, 100% { transform: rotate(-2deg); }
-  50% { transform: rotate(3deg); }
+  0%, 100% { transform: rotate(-1.2deg); }
+  50% { transform: rotate(1.6deg); }
 }
 @keyframes pet-blink {
   0%, 92%, 100% { transform: scaleY(1); }
   95% { transform: scaleY(.08); }
 }
 @keyframes pet-wave-left {
-  0%, 100% { transform: rotate(8deg); }
-  50% { transform: rotate(-18deg); }
+  0%, 100% { transform: rotate(5deg); }
+  50% { transform: rotate(-8deg); }
 }
 @keyframes pet-wave-right {
-  0%, 100% { transform: rotate(-8deg); }
-  50% { transform: rotate(16deg); }
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(7deg); }
 }
 @keyframes pet-orbit-one {
   0% { transform: translate(0, 0); }
@@ -424,9 +548,9 @@ AI_COMPANION_CSS = """
 }
 @keyframes pet-wander {
   0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(-20px, -12px); }
-  50% { transform: translate(-8px, -28px); }
-  75% { transform: translate(16px, -10px); }
+  25% { transform: translate(-8px, -5px); }
+  50% { transform: translate(-4px, -10px); }
+  75% { transform: translate(8px, -4px); }
 }
 @media (max-width: 720px) {
   .pet-shell {
@@ -459,18 +583,31 @@ export default function(component) {
   }
 
   const name = data.name || "Scout"
-  const accent = data.accent || "#38BDF8"
-  const mode = data.motion || "Wander"
+  const accentRaw = data.accent || "#38BDF8"
+  const accent = /^#[0-9a-fA-F]{3,8}$/.test(String(accentRaw)) ? String(accentRaw) : "#38BDF8"
+  const mode = data.motion || "Docked"
   const status = data.status || "Watching"
   const updated = data.updated || ""
+  const avatar = data.avatar || ""
+  const styleValue = String(data.style || "balanced").toLowerCase()
+  const safeStyle = ["balanced", "defensive", "curious", "aggressive"].includes(styleValue) ? styleValue : "balanced"
   const moodValue = String(data.mood || "neutral").toLowerCase()
   const safeMood = ["ready", "watch", "danger", "neutral"].includes(moodValue) ? moodValue : "neutral"
   const messages = Array.isArray(data.messages) && data.messages.length
     ? data.messages
     : [`${name} is watching your paper-trading workflow.`]
   const storageKey = `msa-ai-companion-position-${name}`
+  const tipStorageKey = `msa-ai-companion-tip-${name}`
   const saved = (() => {
     try { return JSON.parse(localStorage.getItem(storageKey) || "null") } catch (_) { return null }
+  })()
+  const savedTipIndex = (() => {
+    try {
+      const parsed = parseInt(localStorage.getItem(tipStorageKey) || "0", 10)
+      return Number.isFinite(parsed) ? parsed : 0
+    } catch (_) {
+      return 0
+    }
   })()
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -478,8 +615,12 @@ export default function(component) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;")
-  const message = messages[Math.floor(Date.now() / 9000) % messages.length]
-  const shellClass = ["pet-shell", `pet-${safeMood}`]
+  let tipIndex = ((savedTipIndex % messages.length) + messages.length) % messages.length
+  const message = String(messages[tipIndex] || "")
+  const avatarMarkup = avatar
+    ? `<img class="pet-avatar-face" alt="" src="${escapeHtml(avatar)}">`
+    : `<div class="pet-eye pet-eye-left"></div><div class="pet-eye pet-eye-right"></div><div class="pet-mouth"></div>`
+  const shellClass = ["pet-shell", `pet-${safeMood}`, `pet-style-${safeStyle}`]
   if (mode === "Wander") shellClass.push("pet-wander")
   if (mode === "Focus") shellClass.push("pet-focus")
   const updatedMarkup = updated
@@ -492,19 +633,24 @@ export default function(component) {
         <div class="pet-shadow"></div>
         <div class="pet-spark pet-spark-one"></div>
         <div class="pet-spark pet-spark-two"></div>
+        <div class="pet-ear pet-ear-left"></div>
+        <div class="pet-ear pet-ear-right"></div>
+        <div class="pet-crest"></div>
         <div class="pet-antenna"></div>
         <div class="pet-arm pet-arm-left"></div>
         <div class="pet-arm pet-arm-right"></div>
-        <div class="pet-body"><div class="pet-core"></div></div>
+        <div class="pet-hand pet-hand-left"></div>
+        <div class="pet-hand pet-hand-right"></div>
+        <div class="pet-body"><div class="pet-chest"></div><div class="pet-core"></div><div class="pet-belt"></div></div>
         <div class="pet-head">
           <div class="pet-face">
-            <div class="pet-eye pet-eye-left"></div>
-            <div class="pet-eye pet-eye-right"></div>
-            <div class="pet-mouth"></div>
+            ${avatarMarkup}
           </div>
         </div>
         <div class="pet-leg pet-leg-left"></div>
         <div class="pet-leg pet-leg-right"></div>
+        <div class="pet-foot pet-foot-left"></div>
+        <div class="pet-foot pet-foot-right"></div>
       </div>
       <div class="pet-bubble">
         <div class="pet-kicker">${escapeHtml(name)} AI companion</div>
@@ -538,6 +684,7 @@ export default function(component) {
   let dragging = false
   let offsetX = 0
   let offsetY = 0
+  let lastPosition = null
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
   const moveTo = (left, top) => {
@@ -549,8 +696,8 @@ export default function(component) {
     shell.style.top = `${nextTop}px`
     shell.style.right = "auto"
     shell.style.bottom = "auto"
+    lastPosition = { left: nextLeft, top: nextTop }
     try { localStorage.setItem(storageKey, JSON.stringify({ left: nextLeft, top: nextTop })) } catch (_) {}
-    if (setStateValue) setStateValue("position", { left: nextLeft, top: nextTop })
   }
 
   const onPointerDown = (event) => {
@@ -570,6 +717,7 @@ export default function(component) {
     if (!dragging) return
     dragging = false
     try { stage.releasePointerCapture(event.pointerId) } catch (_) {}
+    if (setStateValue && lastPosition) setStateValue("position", lastPosition)
     if (setTriggerValue) setTriggerValue("moved", Date.now())
   }
 
@@ -581,8 +729,10 @@ export default function(component) {
   const rotateMessage = () => {
     const bubble = root.querySelector(".pet-message")
     if (!bubble) return
-    const current = Math.max(0, messages.indexOf(bubble.textContent || ""))
-    bubble.textContent = String(messages[(current + 1) % messages.length] || "")
+    tipIndex = (tipIndex + 1) % messages.length
+    try { localStorage.setItem(tipStorageKey, String(tipIndex)) } catch (_) {}
+    bubble.textContent = String(messages[tipIndex] || "")
+    if (setStateValue) setStateValue("tip_index", tipIndex)
     if (setTriggerValue) setTriggerValue("next_tip", Date.now())
   }
   nextButton?.addEventListener("click", rotateMessage)
@@ -593,12 +743,11 @@ export default function(component) {
     shell.style.top = ""
     shell.style.right = "22px"
     shell.style.bottom = "24px"
+    if (setStateValue) setStateValue("position", null)
     if (setTriggerValue) setTriggerValue("docked", Date.now())
   })
-  const timer = window.setInterval(rotateMessage, 9000)
 
   return () => {
-    window.clearInterval(timer)
     stage.removeEventListener("pointerdown", onPointerDown)
     stage.removeEventListener("pointermove", onPointerMove)
     stage.removeEventListener("pointerup", onPointerUp)
@@ -4423,12 +4572,18 @@ def companion_svg_text(profile: dict[str, str] | None = None) -> str:
         return ""
 
 
-def companion_avatar_html(profile: dict[str, str] | None = None) -> str:
-    active = profile or companion_profile()
-    svg = companion_svg_text(active)
+def companion_avatar_src(profile: dict[str, str] | None = None) -> str:
+    svg = companion_svg_text(profile)
     if not svg:
         return ""
-    src = "data:image/svg+xml;utf8," + url_quote(svg)
+    return "data:image/svg+xml;utf8," + url_quote(svg)
+
+
+def companion_avatar_html(profile: dict[str, str] | None = None) -> str:
+    active = profile or companion_profile()
+    src = companion_avatar_src(active)
+    if not src:
+        return ""
     name = html.escape(str(active["name"]))
     return f'<img class="msa-companion-avatar" alt="{name} character" src="{src}">'
 
@@ -4538,7 +4693,7 @@ def render_companion_picker() -> None:
         st.session_state["ai_companion"] = "Scout"
     st.session_state.setdefault("ai_companion_enabled", True)
     if st.session_state.get("ai_companion_motion") not in {"Wander", "Docked", "Focus"}:
-        st.session_state["ai_companion_motion"] = "Wander"
+        st.session_state["ai_companion_motion"] = "Docked"
     with st.sidebar:
         selected = st.segmented_control("Choose AI character", options, key="ai_companion")
         profile = companion_profile(str(selected or selected_companion_name()))
@@ -4550,6 +4705,7 @@ def render_companion_picker() -> None:
             ["Wander", "Docked", "Focus"],
             key="ai_companion_motion",
         )
+        st.caption("Docked is the steady mode. Use Wander only when you want him to drift a little.")
 
 
 def companion_status_mood(status: str) -> str:
@@ -4626,7 +4782,7 @@ def companion_overlay_messages(profile: dict[str, str]) -> list[str]:
 def render_floating_companion() -> None:
     profile = companion_profile()
     enabled = bool(st.session_state.get("ai_companion_enabled", True))
-    motion = str(st.session_state.get("ai_companion_motion", "Wander"))
+    motion = str(st.session_state.get("ai_companion_motion", "Docked"))
     latest = st.session_state.get("companion_latest_analysis")
     latest = latest if isinstance(latest, dict) else {}
     AI_COMPANION_COMPONENT(
@@ -4636,6 +4792,8 @@ def render_floating_companion() -> None:
             "name": profile["name"],
             "accent": profile["accent"],
             "tagline": profile["tagline"],
+            "style": profile["style"],
+            "avatar": companion_avatar_src(profile),
             "motion": motion,
             "status": str(latest.get("Status", "Watching")),
             "mood": str(latest.get("Mood", "neutral")),
@@ -4645,6 +4803,7 @@ def render_floating_companion() -> None:
         height=1,
         width="stretch",
         on_position_change=lambda: None,
+        on_tip_index_change=lambda: None,
         on_moved_change=lambda: None,
         on_next_tip_change=lambda: None,
         on_docked_change=lambda: None,

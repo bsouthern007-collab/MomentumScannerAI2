@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import tkinter as tk
 
@@ -9,10 +10,10 @@ APP_DIR = Path(__file__).resolve().parent
 STATUS_FILE = APP_DIR / "data" / "companion_status.json"
 
 PROFILES = {
-    "Scout": {"accent": "#38BDF8", "tagline": "Clean setup coach"},
-    "Null": {"accent": "#A78BFA", "tagline": "Quiet risk checker"},
-    "Nova": {"accent": "#22D3EE", "tagline": "Catalyst and news scout"},
-    "Flux": {"accent": "#F59E0B", "tagline": "Fast momentum watcher"},
+    "Scout": {"accent": "#38BDF8", "tagline": "Clean setup coach", "style": "robot"},
+    "Null": {"accent": "#A78BFA", "tagline": "Quiet risk checker", "style": "hood"},
+    "Nova": {"accent": "#22D3EE", "tagline": "Catalyst and news scout", "style": "star"},
+    "Flux": {"accent": "#F59E0B", "tagline": "Fast momentum watcher", "style": "bolt"},
 }
 
 TIPS = [
@@ -45,7 +46,7 @@ class DesktopCompanion:
         self.status_snapshot: dict[str, str] = {}
         self.status_mtime = 0.0
 
-        self.canvas = tk.Canvas(self.root, width=390, height=245, bg="#ff00ff", highlightthickness=0)
+        self.canvas = tk.Canvas(self.root, width=420, height=260, bg="#ff00ff", highlightthickness=0)
         self.canvas.pack()
         self.root.geometry("+960+560")
 
@@ -59,7 +60,6 @@ class DesktopCompanion:
 
         self.poll_status_file()
         self.animate()
-        self.rotate_tip()
 
     def start_drag(self, event: tk.Event) -> None:
         self.drag_x = int(event.x)
@@ -84,10 +84,6 @@ class DesktopCompanion:
     def toggle_bubble(self, _event: tk.Event | None = None) -> None:
         self.show_bubble = not self.show_bubble
         self.draw()
-
-    def rotate_tip(self) -> None:
-        self.next_tip()
-        self.root.after(9000, self.rotate_tip)
 
     def poll_status_file(self) -> None:
         try:
@@ -141,31 +137,65 @@ class DesktopCompanion:
         profile = PROFILES[self.name]
         accent = profile["accent"]
         core = self.mood_color()
-        offset = -6 if self.bob < 40 else 0
-        x = 58
-        y = 82 + offset
+        offset = int(math.sin(self.bob / 80 * math.tau) * 4)
+        x = 56
+        y = 84 + offset
 
-        self.canvas.create_oval(x + 22, y + 110, x + 108, y + 127, fill="#000000", outline="", stipple="gray50")
-        self.canvas.create_line(x + 62, y + 4, x + 62, y + 26, fill=accent, width=5, capstyle=tk.ROUND)
-        self.canvas.create_oval(x + 52, y - 8, x + 72, y + 12, fill=core, outline="#D7FFE0", width=3)
+        self.canvas.create_oval(x + 17, y + 125, x + 121, y + 144, fill="#000000", outline="", stipple="gray50")
+        self.canvas.create_oval(x + 15, y + 43, x + 39, y + 73, fill="#101821", outline=accent, width=4)
+        self.canvas.create_oval(x + 99, y + 43, x + 123, y + 73, fill="#101821", outline=accent, width=4)
+        self.draw_character_crest(x, y, accent, core, profile["style"])
 
-        self.canvas.create_line(x + 17, y + 73, x + 4, y + 104, fill=accent, width=13, capstyle=tk.ROUND)
-        self.canvas.create_line(x + 107, y + 73, x + 121, y + 100, fill=accent, width=13, capstyle=tk.ROUND)
-        self.canvas.create_oval(x + 22, y + 50, x + 102, y + 125, fill="#101821", outline=accent, width=4)
-        self.canvas.create_oval(x + 49, y + 75, x + 75, y + 101, fill=core, outline="")
+        self.canvas.create_line(x + 24, y + 86, x + 8, y + 118, fill=accent, width=14, capstyle=tk.ROUND)
+        self.canvas.create_line(x + 112, y + 86, x + 128, y + 114, fill=accent, width=14, capstyle=tk.ROUND)
+        self.canvas.create_oval(x + 2, y + 111, x + 20, y + 129, fill=accent, outline="#101821", width=2)
+        self.canvas.create_oval(x + 119, y + 107, x + 137, y + 125, fill=accent, outline="#101821", width=2)
 
-        self.round_rect(x + 10, y + 18, x + 114, y + 78, 24, fill="#172232", outline=accent, width=4)
-        self.round_rect(x + 28, y + 34, x + 96, y + 64, 14, fill="#0B1117", outline="#293546", width=2)
-        self.canvas.create_oval(x + 45, y + 44, x + 56, y + 55, fill=core, outline="")
-        self.canvas.create_oval(x + 68, y + 44, x + 79, y + 55, fill=core, outline="")
-        self.canvas.create_arc(x + 51, y + 48, x + 73, y + 69, start=200, extent=140, style=tk.ARC, outline="#B7C2D0", width=3)
+        self.round_rect(x + 24, y + 59, x + 112, y + 137, 28, fill="#101821", outline=accent, width=4)
+        self.round_rect(x + 40, y + 75, x + 96, y + 114, 16, fill="#172232", outline="#293546", width=2)
+        self.canvas.create_oval(x + 55, y + 84, x + 81, y + 110, fill=core, outline="")
+        self.canvas.create_line(x + 42, y + 119, x + 94, y + 119, fill=accent, width=5, capstyle=tk.ROUND)
 
-        self.canvas.create_line(x + 40, y + 121, x + 39, y + 143, fill=accent, width=12, capstyle=tk.ROUND)
-        self.canvas.create_line(x + 86, y + 121, x + 87, y + 143, fill=accent, width=12, capstyle=tk.ROUND)
-        self.canvas.create_text(x + 62, y + 166, text=self.name.upper(), fill=accent, font=("Segoe UI", 12, "bold"))
+        self.round_rect(x + 12, y + 18, x + 124, y + 84, 28, fill="#172232", outline=accent, width=4)
+        self.round_rect(x + 29, y + 34, x + 107, y + 68, 15, fill="#0B1117", outline="#293546", width=2)
+        if profile["style"] == "hood":
+            self.canvas.create_line(x + 43, y + 51, x + 58, y + 51, fill=accent, width=7, capstyle=tk.ROUND)
+            self.canvas.create_line(x + 78, y + 51, x + 93, y + 51, fill=accent, width=7, capstyle=tk.ROUND)
+            self.canvas.create_line(x + 50, y + 65, x + 88, y + 65, fill="#38BDF8", width=4, capstyle=tk.ROUND)
+        else:
+            self.canvas.create_oval(x + 48, y + 45, x + 59, y + 56, fill=core, outline="")
+            self.canvas.create_oval(x + 77, y + 45, x + 88, y + 56, fill=core, outline="")
+            self.canvas.create_arc(x + 54, y + 49, x + 82, y + 72, start=200, extent=140, style=tk.ARC, outline="#B7C2D0", width=3)
+
+        self.canvas.create_line(x + 45, y + 133, x + 44, y + 154, fill=accent, width=12, capstyle=tk.ROUND)
+        self.canvas.create_line(x + 91, y + 133, x + 92, y + 154, fill=accent, width=12, capstyle=tk.ROUND)
+        self.canvas.create_oval(x + 31, y + 150, x + 58, y + 162, fill="#101821", outline=accent, width=3)
+        self.canvas.create_oval(x + 78, y + 150, x + 105, y + 162, fill="#101821", outline=accent, width=3)
+        self.canvas.create_text(x + 68, y + 181, text=self.name.upper(), fill=accent, font=("Segoe UI", 12, "bold"))
 
         if self.show_bubble:
             self.draw_bubble(accent, profile["tagline"])
+
+    def draw_character_crest(self, x: int, y: int, accent: str, core: str, style: str) -> None:
+        if style == "hood":
+            self.canvas.create_arc(x + 28, y - 2, x + 108, y + 68, start=20, extent=140, style=tk.ARC, outline=accent, width=5)
+            self.canvas.create_oval(x + 25, y + 4, x + 39, y + 18, fill="#38BDF8", outline="")
+            self.canvas.create_oval(x + 97, y + 4, x + 111, y + 18, fill="#38BDF8", outline="")
+            return
+        if style == "star":
+            points = [
+                x + 68, y - 4, x + 76, y + 18, x + 100, y + 18, x + 80, y + 31,
+                x + 88, y + 54, x + 68, y + 40, x + 48, y + 54, x + 56, y + 31,
+                x + 36, y + 18, x + 60, y + 18,
+            ]
+            self.canvas.create_polygon(points, fill="#38BDF8", outline=accent, width=3)
+            return
+        if style == "bolt":
+            points = [x + 76, y - 10, x + 48, y + 39, x + 69, y + 39, x + 58, y + 88, x + 95, y + 23, x + 73, y + 23]
+            self.canvas.create_polygon(points, fill=accent, outline="#FFE7B3", width=3)
+            return
+        self.canvas.create_line(x + 68, y - 2, x + 68, y + 24, fill=accent, width=5, capstyle=tk.ROUND)
+        self.canvas.create_oval(x + 57, y - 16, x + 79, y + 6, fill=core, outline="#D7FFE0", width=3)
 
     def round_rect(self, x1: int, y1: int, x2: int, y2: int, radius: int, **kwargs: object) -> None:
         points = [
