@@ -90,6 +90,16 @@ Dashboard, Daily Gameplan, Scanner, Market Scan, and Live Tracker include a scan
 
 The app includes an inline SVG brand mark and selectable AI characters: Scout, Null, Nova, and Flux. The selected character appears in the sidebar and dashboard, then summarizes the current top stock with plain-English entry, stop, target, and data-confidence context. Character art ships in `assets/`, so it does not require image hosting, paid services, or extra deployment files.
 
+The app also includes a floating animated companion overlay. Turn it on from the sidebar, choose Wander, Docked, or Focus mode, drag the character around the app, and use the tip button to rotate beginner-friendly reminders. This runs inside the Streamlit app/browser. A true always-on desktop pet that floats over other Windows apps would need a separate desktop wrapper.
+
+For a local Windows desktop companion, run:
+
+```text
+.venv\Scripts\python.exe desktop_companion.py
+```
+
+That opens a small always-on-top companion you can drag around your PC. Right-click cycles Scout, Null, Nova, and Flux. Space changes the tip. Esc closes it.
+
 ## Paper approval gate
 
 Trade Desk includes a paper-order approval checklist for data source, chart entry, stop loss, target reward, news, spread, volume, and halt risk. The final approval button stays locked until the checklist is complete and no hard blocker is active.

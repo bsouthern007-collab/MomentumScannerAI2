@@ -73,6 +73,472 @@ COMPANION_PROFILES = {
         "accent": "#F59E0B",
     },
 }
+AI_COMPANION_HTML = """
+<div id="msaAiCompanionRoot"></div>
+"""
+AI_COMPANION_CSS = """
+:host {
+  --pet-accent: #38BDF8;
+  --pet-bg: #101821;
+  --pet-panel: rgba(11, 17, 23, .94);
+  --pet-text: #F3F7FA;
+  --pet-muted: #B7C2D0;
+  --pet-border: rgba(148, 163, 184, .28);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.pet-shell {
+  position: fixed;
+  right: 22px;
+  bottom: 24px;
+  z-index: 2147483000;
+  width: min(310px, calc(100vw - 28px));
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+  pointer-events: none;
+  user-select: none;
+}
+.pet-shell.pet-focus {
+  width: min(370px, calc(100vw - 28px));
+  grid-template-columns: 116px minmax(0, 1fr);
+}
+.pet-shell.pet-hidden {
+  display: none;
+}
+.pet-bubble {
+  pointer-events: auto;
+  border: 1px solid var(--pet-border);
+  border-radius: 14px;
+  background: var(--pet-panel);
+  color: var(--pet-text);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .34);
+  padding: 11px 12px;
+  min-height: 84px;
+  backdrop-filter: blur(14px);
+}
+.pet-kicker {
+  color: var(--pet-accent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.pet-message {
+  margin-top: 5px;
+  color: var(--pet-text);
+  font-size: 13px;
+  line-height: 1.28;
+}
+.pet-controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+.pet-control {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--pet-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+  color: var(--pet-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.pet-control:hover {
+  border-color: var(--pet-accent);
+  color: var(--pet-text);
+}
+.pet-stage {
+  pointer-events: auto;
+  width: 96px;
+  height: 132px;
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  filter: drop-shadow(0 18px 28px rgba(0, 0, 0, .36));
+  animation: pet-breathe 2.9s ease-in-out infinite;
+}
+.pet-focus .pet-stage {
+  transform-origin: bottom center;
+  scale: 1.12;
+}
+.pet-stage:active {
+  cursor: grabbing;
+}
+.pet-shadow {
+  position: absolute;
+  left: 22px;
+  bottom: 0;
+  width: 54px;
+  height: 13px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .32);
+  filter: blur(2px);
+  animation: pet-shadow 2.9s ease-in-out infinite;
+}
+.pet-body {
+  position: absolute;
+  left: 18px;
+  bottom: 12px;
+  width: 60px;
+  height: 70px;
+  border-radius: 24px 24px 18px 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pet-accent) 28%, #101821) 0%, #101821 70%);
+  border: 3px solid var(--pet-accent);
+}
+.pet-core {
+  position: absolute;
+  left: 18px;
+  top: 20px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #00C805;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--pet-accent) 65%, transparent);
+}
+.pet-head {
+  position: absolute;
+  left: 10px;
+  bottom: 72px;
+  width: 76px;
+  height: 58px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #172232 0%, #101821 100%);
+  border: 3px solid var(--pet-accent);
+  animation: pet-head 3.8s ease-in-out infinite;
+}
+.pet-antenna {
+  position: absolute;
+  left: 46px;
+  bottom: 129px;
+  width: 4px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--pet-accent);
+}
+.pet-antenna:after {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: -12px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #00C805;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--pet-accent) 70%, transparent);
+}
+.pet-face {
+  position: absolute;
+  left: 13px;
+  top: 14px;
+  width: 50px;
+  height: 28px;
+  border-radius: 13px;
+  background: #0B1117;
+  border: 1px solid rgba(148, 163, 184, .24);
+}
+.pet-eye {
+  position: absolute;
+  top: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #00C805;
+  animation: pet-blink 4.8s infinite;
+}
+.pet-eye-left {
+  left: 12px;
+}
+.pet-eye-right {
+  right: 12px;
+}
+.pet-mouth {
+  position: absolute;
+  left: 18px;
+  bottom: 6px;
+  width: 14px;
+  height: 6px;
+  border-bottom: 3px solid var(--pet-muted);
+  border-radius: 999px;
+}
+.pet-arm {
+  position: absolute;
+  bottom: 50px;
+  width: 16px;
+  height: 42px;
+  border-radius: 999px;
+  background: #101821;
+  border: 3px solid var(--pet-accent);
+  transform-origin: top center;
+}
+.pet-arm-left {
+  left: 4px;
+  rotate: 16deg;
+  animation: pet-wave-left 3.6s ease-in-out infinite;
+}
+.pet-arm-right {
+  right: 4px;
+  rotate: -16deg;
+  animation: pet-wave-right 4.2s ease-in-out infinite;
+}
+.pet-leg {
+  position: absolute;
+  bottom: 5px;
+  width: 18px;
+  height: 21px;
+  border-radius: 8px;
+  background: #101821;
+  border: 3px solid var(--pet-accent);
+}
+.pet-leg-left {
+  left: 27px;
+}
+.pet-leg-right {
+  right: 27px;
+}
+.pet-spark {
+  position: absolute;
+  border-radius: 999px;
+  background: var(--pet-accent);
+  opacity: .85;
+  box-shadow: 0 0 14px var(--pet-accent);
+}
+.pet-spark-one {
+  width: 7px;
+  height: 7px;
+  left: 7px;
+  top: 27px;
+  animation: pet-orbit-one 4s linear infinite;
+}
+.pet-spark-two {
+  width: 5px;
+  height: 5px;
+  right: 6px;
+  top: 56px;
+  animation: pet-orbit-two 5s linear infinite;
+}
+.pet-wander {
+  animation: pet-wander 12s ease-in-out infinite;
+}
+.pet-manual {
+  animation: none;
+}
+@keyframes pet-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes pet-shadow {
+  0%, 100% { transform: scaleX(1); opacity: .34; }
+  50% { transform: scaleX(.74); opacity: .2; }
+}
+@keyframes pet-head {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(3deg); }
+}
+@keyframes pet-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(.08); }
+}
+@keyframes pet-wave-left {
+  0%, 100% { transform: rotate(8deg); }
+  50% { transform: rotate(-18deg); }
+}
+@keyframes pet-wave-right {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(16deg); }
+}
+@keyframes pet-orbit-one {
+  0% { transform: translate(0, 0); }
+  50% { transform: translate(10px, 18px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes pet-orbit-two {
+  0% { transform: translate(0, 0); }
+  50% { transform: translate(-12px, -15px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes pet-wander {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-20px, -12px); }
+  50% { transform: translate(-8px, -28px); }
+  75% { transform: translate(16px, -10px); }
+}
+@media (max-width: 720px) {
+  .pet-shell {
+    width: min(260px, calc(100vw - 22px));
+    grid-template-columns: 78px minmax(0, 1fr);
+    right: 10px;
+    bottom: 12px;
+  }
+  .pet-stage {
+    width: 78px;
+    height: 112px;
+    scale: .82;
+    transform-origin: bottom left;
+  }
+  .pet-bubble {
+    font-size: 12px;
+    min-height: 78px;
+  }
+}
+"""
+AI_COMPANION_JS = """
+export default function(component) {
+  const { data, parentElement, setStateValue, setTriggerValue } = component
+  const root = parentElement.querySelector("#msaAiCompanionRoot")
+  if (!root) return
+
+  if (!data || data.enabled === false) {
+    root.innerHTML = ""
+    return
+  }
+
+  const name = data.name || "Scout"
+  const accent = data.accent || "#38BDF8"
+  const mode = data.motion || "Wander"
+  const messages = Array.isArray(data.messages) && data.messages.length
+    ? data.messages
+    : [`${name} is watching your paper-trading workflow.`]
+  const storageKey = `msa-ai-companion-position-${name}`
+  const saved = (() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) || "null") } catch (_) { return null }
+  })()
+  const escapeHtml = (value) => String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+  const message = messages[Math.floor(Date.now() / 9000) % messages.length]
+  const shellClass = ["pet-shell"]
+  if (mode === "Wander") shellClass.push("pet-wander")
+  if (mode === "Focus") shellClass.push("pet-focus")
+
+  root.innerHTML = `
+    <div class="${shellClass.join(" ")}" style="--pet-accent: ${accent};">
+      <div class="pet-stage" title="Drag ${name} anywhere">
+        <div class="pet-shadow"></div>
+        <div class="pet-spark pet-spark-one"></div>
+        <div class="pet-spark pet-spark-two"></div>
+        <div class="pet-antenna"></div>
+        <div class="pet-arm pet-arm-left"></div>
+        <div class="pet-arm pet-arm-right"></div>
+        <div class="pet-body"><div class="pet-core"></div></div>
+        <div class="pet-head">
+          <div class="pet-face">
+            <div class="pet-eye pet-eye-left"></div>
+            <div class="pet-eye pet-eye-right"></div>
+            <div class="pet-mouth"></div>
+          </div>
+        </div>
+        <div class="pet-leg pet-leg-left"></div>
+        <div class="pet-leg pet-leg-right"></div>
+      </div>
+      <div class="pet-bubble">
+        <div class="pet-kicker">${escapeHtml(name)} AI companion</div>
+        <div class="pet-message">${escapeHtml(message)}</div>
+        <div class="pet-controls">
+          <button class="pet-control pet-next" type="button" title="Next tip">tip</button>
+          <button class="pet-control pet-home" type="button" title="Dock bottom right">dock</button>
+        </div>
+      </div>
+    </div>
+  `
+
+  const shell = root.querySelector(".pet-shell")
+  const stage = root.querySelector(".pet-stage")
+  const nextButton = root.querySelector(".pet-next")
+  const homeButton = root.querySelector(".pet-home")
+  if (!shell || !stage) return
+
+  if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+    shell.classList.add("pet-manual")
+    shell.style.left = `${Math.max(8, Math.min(saved.left, window.innerWidth - 120))}px`
+    shell.style.top = `${Math.max(8, Math.min(saved.top, window.innerHeight - 120))}px`
+    shell.style.right = "auto"
+    shell.style.bottom = "auto"
+  }
+
+  let dragging = false
+  let offsetX = 0
+  let offsetY = 0
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+  const moveTo = (left, top) => {
+    const rect = shell.getBoundingClientRect()
+    const nextLeft = clamp(left, 8, window.innerWidth - rect.width - 8)
+    const nextTop = clamp(top, 8, window.innerHeight - rect.height - 8)
+    shell.classList.add("pet-manual")
+    shell.style.left = `${nextLeft}px`
+    shell.style.top = `${nextTop}px`
+    shell.style.right = "auto"
+    shell.style.bottom = "auto"
+    try { localStorage.setItem(storageKey, JSON.stringify({ left: nextLeft, top: nextTop })) } catch (_) {}
+    if (setStateValue) setStateValue("position", { left: nextLeft, top: nextTop })
+  }
+
+  const onPointerDown = (event) => {
+    dragging = true
+    const rect = shell.getBoundingClientRect()
+    offsetX = event.clientX - rect.left
+    offsetY = event.clientY - rect.top
+    stage.setPointerCapture(event.pointerId)
+    shell.classList.add("pet-manual")
+    event.preventDefault()
+  }
+  const onPointerMove = (event) => {
+    if (!dragging) return
+    moveTo(event.clientX - offsetX, event.clientY - offsetY)
+  }
+  const onPointerUp = (event) => {
+    if (!dragging) return
+    dragging = false
+    try { stage.releasePointerCapture(event.pointerId) } catch (_) {}
+    if (setTriggerValue) setTriggerValue("moved", Date.now())
+  }
+
+  stage.addEventListener("pointerdown", onPointerDown)
+  stage.addEventListener("pointermove", onPointerMove)
+  stage.addEventListener("pointerup", onPointerUp)
+  stage.addEventListener("pointercancel", onPointerUp)
+
+  const rotateMessage = () => {
+    const bubble = root.querySelector(".pet-message")
+    if (!bubble) return
+    const current = Math.max(0, messages.indexOf(bubble.textContent || ""))
+    bubble.textContent = String(messages[(current + 1) % messages.length] || "")
+    if (setTriggerValue) setTriggerValue("next_tip", Date.now())
+  }
+  nextButton?.addEventListener("click", rotateMessage)
+  homeButton?.addEventListener("click", () => {
+    try { localStorage.removeItem(storageKey) } catch (_) {}
+    shell.classList.remove("pet-manual")
+    shell.style.left = ""
+    shell.style.top = ""
+    shell.style.right = "22px"
+    shell.style.bottom = "24px"
+    if (setTriggerValue) setTriggerValue("docked", Date.now())
+  })
+  const timer = window.setInterval(rotateMessage, 9000)
+
+  return () => {
+    window.clearInterval(timer)
+    stage.removeEventListener("pointerdown", onPointerDown)
+    stage.removeEventListener("pointermove", onPointerMove)
+    stage.removeEventListener("pointerup", onPointerUp)
+    stage.removeEventListener("pointercancel", onPointerUp)
+  }
+}
+"""
+AI_COMPANION_COMPONENT = st.components.v2.component(
+    "floating_ai_companion",
+    html=AI_COMPANION_HTML,
+    css=AI_COMPANION_CSS,
+    js=AI_COMPANION_JS,
+)
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 JOURNAL_FILE = DATA_DIR / "trade_journal.csv"
 ORDERS_FILE = DATA_DIR / "paper_orders.csv"
@@ -3635,15 +4101,91 @@ def render_companion_card(analysis: dict[str, Any] | None = None, context: str =
 
 def render_companion_picker() -> None:
     options = companion_names()
-    default = selected_companion_name()
+    if st.session_state.get("ai_companion") not in options:
+        st.session_state["ai_companion"] = "Scout"
+    st.session_state.setdefault("ai_companion_enabled", True)
+    if st.session_state.get("ai_companion_motion") not in {"Wander", "Docked", "Focus"}:
+        st.session_state["ai_companion_motion"] = "Wander"
     with st.sidebar:
-        selected = st.segmented_control("Choose AI character", options, default=default, key="ai_companion")
-        profile = companion_profile(str(selected or default))
+        selected = st.segmented_control("Choose AI character", options, key="ai_companion")
+        profile = companion_profile(str(selected or selected_companion_name()))
         st.image(str(companion_asset_path(profile)), width=118)
         st.caption(f"{profile['name']}: {profile['tagline']}")
+        st.toggle("Floating companion", key="ai_companion_enabled")
+        st.segmented_control(
+            "Movement",
+            ["Wander", "Docked", "Focus"],
+            key="ai_companion_motion",
+        )
+
+
+def remember_companion_analysis(analysis: dict[str, Any] | None) -> None:
+    if not analysis:
+        return
+    st.session_state["companion_latest_analysis"] = {
+        "Ticker": str(analysis.get("Ticker") or "Stock"),
+        "Status": live_status(analysis),
+        "Entry trigger": str(analysis.get("Entry trigger") or "entry trigger"),
+        "Stop": str(analysis.get("Stop") or "planned stop"),
+        "Target 1": str(analysis.get("Target 1") or "target 1"),
+        "Data confidence": str(data_confidence_summary(analysis).get("label", "data check")),
+        "Playbook fit": str(analysis.get("Playbook fit", playbook_fit_label(analysis, analysis.get("AI score")))),
+    }
+
+
+def companion_overlay_messages(profile: dict[str, str]) -> list[str]:
+    name = str(profile["name"])
+    latest = st.session_state.get("companion_latest_analysis")
+    if isinstance(latest, dict) and latest.get("Ticker"):
+        ticker = str(latest.get("Ticker", "Stock"))
+        status = str(latest.get("Status", "Watching"))
+        entry = str(latest.get("Entry trigger", "entry trigger"))
+        stop = str(latest.get("Stop", "planned stop"))
+        target = str(latest.get("Target 1", "target 1"))
+        confidence = str(latest.get("Data confidence", "data check"))
+        fit = str(latest.get("Playbook fit", "setup check"))
+        return [
+            f"{ticker}: {status}. Use {entry}, {stop}, and {target} as the paper-trade map.",
+            f"{name} check: data confidence is {confidence}. Verify fast moves before trusting the number.",
+            f"{ticker} fit: {fit}. If the setup is not clean, keep scanning instead of forcing a trade.",
+            f"Paper rule: approve only after entry, stop, target, news, volume, and spread all make sense.",
+        ]
+
+    selected = normalize_user_symbol(st.session_state.get("selected_ticker", ""))
+    stock = selected or "the stock you are studying"
+    return [
+        f"{name} is watching {stock}. Drag me anywhere and use the tip button for another reminder.",
+        "Beginner rule: do not buy early. Wait for the entry trigger and define the stop first.",
+        "Before any paper approval, check news, volume, spread, halt risk, and data source.",
+        "Use the journal after every paper trade so the app can help you learn from the setup.",
+    ]
+
+
+def render_floating_companion() -> None:
+    profile = companion_profile()
+    enabled = bool(st.session_state.get("ai_companion_enabled", True))
+    motion = str(st.session_state.get("ai_companion_motion", "Wander"))
+    AI_COMPANION_COMPONENT(
+        key="floating_ai_companion",
+        data={
+            "enabled": enabled,
+            "name": profile["name"],
+            "accent": profile["accent"],
+            "tagline": profile["tagline"],
+            "motion": motion,
+            "messages": companion_overlay_messages(profile),
+        },
+        height=1,
+        width="stretch",
+        on_position_change=lambda: None,
+        on_moved_change=lambda: None,
+        on_next_tip_change=lambda: None,
+        on_docked_change=lambda: None,
+    )
 
 
 def render_companion_showcase(analysis: dict[str, Any] | None = None, context: str = "dashboard") -> None:
+    remember_companion_analysis(analysis)
     profile = companion_profile()
     title, message, chip = companion_copy(analysis, profile)
     with st.container(border=True):
@@ -8795,6 +9337,7 @@ def main() -> None:
     ]
     navigation = st.navigation(pages, position="sidebar")
     navigation.run()
+    render_floating_companion()
 
 
 if __name__ == "__main__":
