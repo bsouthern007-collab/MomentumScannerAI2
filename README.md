@@ -50,7 +50,7 @@ When those keys are present, the app tries Alpaca IEX candles for regular stocks
 
 The premium candle chart uses TradingView Lightweight Charts from `assets/lightweight-charts.standalone.production.js`, with an online fallback if that local file is missing.
 
-The TradingView-style chart includes 15/30/45/90/180/1-day window presets, zoom in/out, back/forward, latest, fit-to-context, a bottom range strip for 1D/5D/month/YTD/all views, a buy-zone band, and beginner-readable Buy/Stop/TP chips. Candles stay green for up candles and red for down candles. The chart prioritizes candle autoscaling, resets VWAP by intraday session, and draws sharper candle bodies/wicks so one-minute bars stay readable when zoomed in.
+The TradingView-style chart includes 15/30/45/90/180/1-day window presets, zoom in/out, back/forward, latest, fit-to-context, a bottom range strip for 1D/5D/month/YTD/all views, a buy-zone band, beginner-readable Buy/Stop/TP chips, session dividers, and compact TP/stop direction hints when levels are outside the visible price range. Candles stay green for up candles and red for down candles. The chart prioritizes candle autoscaling, resets VWAP by intraday session, and draws sharper candle bodies/wicks so one-minute bars stay readable when zoomed in.
 
 ## Data confidence
 

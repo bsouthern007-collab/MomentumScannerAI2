@@ -4989,6 +4989,23 @@ def lightweight_chart_payload(
             "high": round(float(max(levels["buy_low"], levels["buy_high"])), 4),
         }
 
+    def clean_level(value: Any) -> float | None:
+        numeric = safe_float(value)
+        if numeric is None or not math.isfinite(float(numeric)):
+            return None
+        return round(float(numeric), 4)
+
+    entry_level = clean_level(levels["entry"])
+    stop_level = clean_level(levels["stop"])
+    target_1_level = clean_level(levels["target_1"])
+    target_2_level = clean_level(levels["target_2"])
+    risk_reward = None
+    if entry_level is not None and stop_level is not None and target_1_level is not None:
+        risk_amount = abs(entry_level - stop_level)
+        reward_amount = abs(target_1_level - entry_level)
+        if risk_amount > 0:
+            risk_reward = round(reward_amount / risk_amount, 2)
+
     level_summary = [
         {"label": "Buy", "value": money(levels["entry"]), "tone": "up", "detail": "AI entry"},
         {"label": "Stop", "value": money(levels["stop"]), "tone": "down", "detail": "risk line"},
@@ -5010,6 +5027,15 @@ def lightweight_chart_payload(
         "priceLines": price_lines,
         "markers": markers,
         "buyZone": buy_zone,
+        "tradeLevels": {
+            "entry": entry_level,
+            "stop": stop_level,
+            "target1": target_1_level,
+            "target2": target_2_level,
+            "riskReward": risk_reward,
+        }
+        if show_plan_levels
+        else {},
         "levelSummary": level_summary if show_plan_levels else [],
         "visibleCount": int(visible_candles or min(len(candles), 60)),
         "activeEndIndex": int(active_end_index),
@@ -5338,6 +5364,102 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     wickContext.setLineDash([]);
   };
 
+  const drawSessionSeparators = (size) => {
+    const range = chart.timeScale().getVisibleLogicalRange();
+    const from = Math.max(1, Math.floor((range ? range.from : 0) - 4));
+    const to = Math.min(payload.candles.length - 1, Math.ceil((range ? range.to : payload.candles.length - 1) + 4));
+    wickContext.save();
+    wickContext.strokeStyle = palette.chart_grid || palette.grid;
+    wickContext.fillStyle = palette.muted_soft;
+    wickContext.globalAlpha = 0.72;
+    wickContext.lineWidth = 1;
+    wickContext.font = "11px Inter, Arial, sans-serif";
+    wickContext.textBaseline = "bottom";
+    for (let index = from; index <= to; index += 1) {
+      const current = payload.candles[index];
+      const previous = payload.candles[index - 1];
+      if (!current || !previous) continue;
+      const currentDay = new Date(Number(current.time) * 1000).toISOString().slice(0, 10);
+      const previousDay = new Date(Number(previous.time) * 1000).toISOString().slice(0, 10);
+      if (currentDay === previousDay) continue;
+      const x = chart.timeScale().timeToCoordinate(current.time);
+      if (!Number.isFinite(x) || x < 0 || x > size.width) continue;
+      wickContext.beginPath();
+      wickContext.moveTo(Math.round(x) + 0.5, 0);
+      wickContext.lineTo(Math.round(x) + 0.5, size.height);
+      wickContext.stroke();
+      const label = new Date(Number(current.time) * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+      wickContext.fillText(label, Math.min(Math.round(x) + 6, size.width - 52), size.height - 18);
+    }
+    wickContext.restore();
+  };
+
+  const drawZoneLabel = (text, x, y, color) => {
+    if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    wickContext.save();
+    wickContext.font = "11px Inter, Arial, sans-serif";
+    wickContext.textBaseline = "middle";
+    const width = wickContext.measureText(text).width + 14;
+    wickContext.fillStyle = String(palette.panel).toUpperCase() === "#FFFFFF" ? "rgba(255, 255, 255, 0.78)" : "rgba(11, 17, 23, 0.62)";
+    wickContext.strokeStyle = color;
+    wickContext.lineWidth = 1;
+    wickContext.beginPath();
+    roundedRectPath(wickContext, x, y - 10, width, 20, 4);
+    wickContext.fill();
+    wickContext.stroke();
+    wickContext.fillStyle = color;
+    wickContext.fillText(text, x + 7, y + 0.5);
+    wickContext.restore();
+  };
+
+  const drawTradePlanCloud = (size) => {
+    const levels = payload.tradeLevels || {};
+    if (!Number.isFinite(Number(levels.entry)) || !Number.isFinite(Number(levels.stop)) || !Number.isFinite(Number(levels.target1))) return;
+    const yEntry = candleSeries.priceToCoordinate(Number(levels.entry));
+    const yStop = candleSeries.priceToCoordinate(Number(levels.stop));
+    const yTarget = candleSeries.priceToCoordinate(Number(levels.target1));
+    if (!Number.isFinite(yEntry) || !Number.isFinite(yStop) || !Number.isFinite(yTarget)) return;
+    const width = Math.min(280, Math.max(150, size.width * 0.26));
+    const x = Math.max(0, size.width - width - 2);
+    const rewardTop = Math.min(yEntry, yTarget);
+    const rewardHeight = Math.max(Math.abs(yTarget - yEntry), 3);
+    const riskTop = Math.min(yEntry, yStop);
+    const riskHeight = Math.max(Math.abs(yStop - yEntry), 3);
+    const yVisible = (value) => Number.isFinite(value) && value >= 0 && value <= size.height;
+    const entryVisible = yVisible(yEntry);
+    const rewardVisible = entryVisible && yVisible(yTarget) && rewardHeight <= size.height * 0.48;
+    const riskVisible = entryVisible && yVisible(yStop) && riskHeight <= size.height * 0.48;
+    if (!rewardVisible && !riskVisible) {
+      if (entryVisible && yTarget < 0) drawZoneLabel("TP1 above", x + 10, 24, "#00C805");
+      if (entryVisible && yStop > size.height) drawZoneLabel("Stop below", x + 10, size.height - 38, "#FF375F");
+      return;
+    }
+    wickContext.save();
+    wickContext.lineWidth = 1;
+    if (rewardVisible) {
+      wickContext.fillStyle = "rgba(0, 200, 5, 0.045)";
+      wickContext.fillRect(x, rewardTop, width, rewardHeight);
+      wickContext.strokeStyle = "rgba(0, 200, 5, 0.20)";
+      wickContext.strokeRect(x + 0.5, rewardTop + 0.5, width - 1, rewardHeight);
+    }
+    if (riskVisible) {
+      wickContext.fillStyle = "rgba(255, 55, 95, 0.050)";
+      wickContext.fillRect(x, riskTop, width, riskHeight);
+      wickContext.strokeStyle = "rgba(255, 55, 95, 0.22)";
+      wickContext.strokeRect(x + 0.5, riskTop + 0.5, width - 1, riskHeight);
+    }
+    wickContext.restore();
+    if (rewardVisible && rewardHeight >= 24) {
+      const rr = Number.isFinite(Number(levels.riskReward)) ? " " + Number(levels.riskReward).toFixed(2) + "R" : "";
+      drawZoneLabel("TP path" + rr, x + 10, rewardTop + rewardHeight / 2, "#00C805");
+    }
+    if (riskVisible && riskHeight >= 24) {
+      drawZoneLabel("Risk zone", x + 10, riskTop + riskHeight / 2, "#FF375F");
+    }
+    if (entryVisible && !rewardVisible && yTarget < 0) drawZoneLabel("TP1 above", x + 10, 24, "#00C805");
+    if (entryVisible && !riskVisible && yStop > size.height) drawZoneLabel("Stop below", x + 10, size.height - 38, "#FF375F");
+  };
+
   const drawSegment = (x, y1, y2, color, width) => {
     if (!Number.isFinite(x) || !Number.isFinite(y1) || !Number.isFinite(y2)) return;
     wickContext.strokeStyle = color;
@@ -5389,7 +5511,9 @@ __LIGHTWEIGHT_CHARTS_LOADER__
     wickContext.clearRect(0, 0, size.width, size.height);
     const spacing = visibleSpacing(size);
     const wickWidth = spacing >= 18 ? 3.2 : spacing >= 10 ? 2.55 : spacing >= 6 ? 2.05 : 1.65;
+    drawSessionSeparators(size);
     drawBuyZone(size);
+    drawTradePlanCloud(size);
     const range = chart.timeScale().getVisibleLogicalRange();
     const from = Math.max(0, Math.floor((range ? range.from : 0) - 8));
     const to = Math.min(payload.candles.length - 1, Math.ceil((range ? range.to : payload.candles.length - 1) + 8));
