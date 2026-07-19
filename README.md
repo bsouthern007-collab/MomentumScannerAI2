@@ -86,6 +86,10 @@ Dashboard, Daily Gameplan, Scanner, Market Scan, and Live Tracker include a scan
 /Learn?track=Market%20pulse
 ```
 
+## Branding and Scout
+
+The app includes an inline SVG brand mark and a lightweight AI companion named Scout. Scout appears in the sidebar and dashboard hero, then summarizes the current top stock with plain-English entry, stop, target, and data-confidence context. The mascot is code-native, so it does not require image hosting, paid services, or extra deployment files.
+
 ## Paper approval gate
 
 Trade Desk includes a paper-order approval checklist for data source, chart entry, stop loss, target reward, news, spread, volume, and halt risk. The final approval button stays locked until the checklist is complete and no hard blocker is active.

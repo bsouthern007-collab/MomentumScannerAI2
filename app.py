@@ -2530,7 +2530,7 @@ def apply_style(mode: str | None = None) -> None:
             overflow: hidden;
             border: 1px solid var(--msa-border);
             border-radius: 8px;
-            padding: 26px 28px;
+            padding: 0;
             background:
                 radial-gradient(circle at 18% -10%, rgba(0, 200, 5, 0.20), transparent 30%),
                 radial-gradient(circle at 85% 20%, rgba(56, 189, 248, 0.18), transparent 34%),
@@ -2551,8 +2551,167 @@ def apply_style(mode: str | None = None) -> None:
             0%, 100% {{transform: translateX(-18%) skewY(-3deg); opacity: .55;}}
             50% {{transform: translateX(18%) skewY(-3deg); opacity: .95;}}
         }}
-        .msa-hero h1 {{margin: 0 0 8px 0; font-size: 2.5rem; line-height: 1.05;}}
+        .msa-hero-grid {{
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: minmax(260px, 1fr) minmax(250px, 330px);
+            gap: 18px;
+            align-items: center;
+            padding: 26px 28px;
+        }}
+        .msa-logo-lockup {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }}
+        .msa-brand-mark {{
+            width: 54px;
+            height: 54px;
+            flex: 0 0 54px;
+            filter: drop-shadow(0 12px 22px rgba(0, 200, 5, 0.18));
+        }}
+        .msa-logo-copy span {{
+            display: block;
+            color: var(--msa-muted-soft);
+            font-size: .72rem;
+            font-weight: 820;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }}
+        .msa-logo-copy strong {{
+            display: block;
+            color: var(--msa-text);
+            font-size: 1.02rem;
+            font-weight: 880;
+            line-height: 1.05;
+        }}
+        .msa-hero h1 {{margin: 0 0 8px 0; font-size: clamp(2rem, 4vw, 3.25rem); line-height: 1.02;}}
         .msa-hero p {{max-width: 820px; margin: 0; color: var(--msa-muted); font-size: 1.02rem;}}
+        .msa-hero-badges {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-top: 14px;
+        }}
+        .msa-hero-badge {{
+            border: 1px solid var(--msa-border);
+            border-radius: 999px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            font-size: .78rem;
+            font-weight: 760;
+            padding: 6px 10px;
+        }}
+        .msa-companion-card {{
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(0, 200, 5, .10), transparent 38%),
+                linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+            padding: 13px;
+            box-shadow: 0 18px 38px var(--msa-shadow);
+        }}
+        .msa-companion-card:before {{
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(120deg, transparent 0%, rgba(56, 189, 248, .10) 46%, transparent 74%);
+            transform: translateX(-100%);
+            animation: msa-scanline 6.5s ease-in-out infinite;
+        }}
+        @keyframes msa-scanline {{
+            0%, 52%, 100% {{transform: translateX(-100%); opacity: 0;}}
+            62% {{opacity: 1;}}
+            84% {{transform: translateX(100%); opacity: 0;}}
+        }}
+        .msa-companion-inner {{
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 86px 1fr;
+            gap: 12px;
+            align-items: center;
+        }}
+        .msa-companion-sidebar .msa-companion-inner {{
+            grid-template-columns: 72px 1fr;
+        }}
+        .msa-companion-bot {{
+            width: 86px;
+            height: 86px;
+            filter: drop-shadow(0 14px 26px rgba(0, 0, 0, .22));
+        }}
+        .msa-companion-sidebar .msa-companion-bot {{
+            width: 72px;
+            height: 72px;
+        }}
+        .msa-companion-kicker {{
+            color: var(--msa-muted-soft);
+            font-size: .68rem;
+            font-weight: 820;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+        }}
+        .msa-companion-title {{
+            color: var(--msa-text);
+            font-size: 1.02rem;
+            font-weight: 880;
+            line-height: 1.08;
+            margin-top: 4px;
+        }}
+        .msa-companion-message {{
+            color: var(--msa-muted);
+            font-size: .82rem;
+            line-height: 1.3;
+            margin-top: 6px;
+        }}
+        .msa-companion-chip {{
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid var(--msa-border);
+            border-radius: 999px;
+            background: var(--msa-panel);
+            color: var(--msa-muted);
+            font-size: .72rem;
+            font-weight: 780;
+            padding: 5px 8px;
+            margin-top: 9px;
+        }}
+        .msa-sidebar-brand {{
+            margin: 10px 0 12px 0;
+        }}
+        .msa-sidebar-logo {{
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 10px 10px 9px;
+            border: 1px solid var(--msa-border);
+            border-radius: 8px;
+            background: linear-gradient(180deg, var(--msa-panel) 0%, var(--msa-panel-alt) 100%);
+        }}
+        .msa-sidebar-logo .msa-brand-mark {{
+            width: 38px;
+            height: 38px;
+            flex-basis: 38px;
+        }}
+        .msa-sidebar-logo strong {{
+            display: block;
+            color: var(--msa-text);
+            font-size: .9rem;
+            font-weight: 860;
+            line-height: 1.05;
+        }}
+        .msa-sidebar-logo span {{
+            display: block;
+            color: var(--msa-muted-soft);
+            font-size: .68rem;
+            font-weight: 760;
+            margin-top: 3px;
+        }}
         .msa-status-row {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -3233,6 +3392,13 @@ def apply_style(mode: str | None = None) -> None:
                 text-align: left;
                 margin-top: 10px;
             }}
+            .msa-hero-grid {{
+                grid-template-columns: 1fr;
+                padding: 22px;
+            }}
+            .msa-companion-inner {{
+                grid-template-columns: 72px 1fr;
+            }}
         }}
         </style>
         """,
@@ -3240,12 +3406,164 @@ def apply_style(mode: str | None = None) -> None:
     )
 
 
+def brand_mark_svg() -> str:
+    return """
+    <svg class="msa-brand-mark" viewBox="0 0 72 72" role="img" aria-label="Trading for Dummys 101 logo" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="6" width="60" height="60" rx="14" fill="#00C805"/>
+      <path d="M18 48L30 36L39 42L54 22" fill="none" stroke="#081018" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M54 22V36" fill="none" stroke="#081018" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="55" cy="18" r="7" fill="#38BDF8" stroke="#081018" stroke-width="3"/>
+      <text x="17" y="58" fill="#081018" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="900">101</text>
+    </svg>
+    """
+
+
+def ai_companion_svg() -> str:
+    return """
+    <svg class="msa-companion-bot" viewBox="0 0 96 96" role="img" aria-label="Scout AI companion" xmlns="http://www.w3.org/2000/svg">
+      <path d="M48 25V14" stroke="#38BDF8" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="48" cy="11" r="5" fill="#00C805"/>
+      <path d="M14 45H7M89 45H82" stroke="#38BDF8" stroke-width="4" stroke-linecap="round"/>
+      <rect x="18" y="24" width="60" height="48" rx="18" fill="#101821" stroke="#38BDF8" stroke-width="3"/>
+      <rect x="27" y="34" width="42" height="23" rx="10" fill="#172232" stroke="#293546" stroke-width="2"/>
+      <circle cx="39" cy="46" r="5" fill="#00C805"/>
+      <circle cx="57" cy="46" r="5" fill="#00C805"/>
+      <path d="M36 61C42 66 54 66 60 61" stroke="#A8B3C2" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M29 75H67" stroke="#293546" stroke-width="5" stroke-linecap="round"/>
+      <path d="M32 78H64" stroke="#00C805" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    """
+
+
+def companion_copy(analysis: dict[str, Any] | None = None) -> tuple[str, str, str]:
+    if analysis:
+        ticker = str(analysis.get("Ticker") or "Stock")
+        status = live_status(analysis)
+        entry = str(analysis.get("Entry trigger") or "entry trigger")
+        stop = str(analysis.get("Stop") or "planned stop")
+        target = str(analysis.get("Target 1") or "target 1")
+        confidence = data_confidence_summary(analysis).get("label", "data check")
+
+        if status == "Breakout trigger":
+            return (
+                "Scout sees a trigger",
+                f"{ticker} is at the planned trigger. Check volume, spread, news, and risk to {stop} before approving any paper trade.",
+                f"{ticker} - trigger active - {confidence}",
+            )
+        if status == "In buy zone":
+            return (
+                "Scout sees the buy zone",
+                f"{ticker} is inside the planned zone. Wait for confirmation at {entry}; first planned trim is {target}.",
+                f"{ticker} - buy zone - {confidence}",
+            )
+        if status == "Near buy zone":
+            return (
+                "Scout says wait for proof",
+                f"{ticker} is close, but the cleaner plan is still confirmation at {entry} with risk controlled near {stop}.",
+                f"{ticker} - near zone - {confidence}",
+            )
+        if status == "Below stop":
+            return (
+                "Scout says rebuild",
+                f"{ticker} is below the risk line. Treat the old plan as invalid until fresh candles create a new setup.",
+                f"{ticker} - below stop - {confidence}",
+            )
+        if status == "Momentum active":
+            return (
+                "Scout sees momentum",
+                f"{ticker} has active momentum. Do not chase; use the chart to wait for the next clean trigger and defined stop.",
+                f"{ticker} - momentum - {confidence}",
+            )
+        return (
+            "Scout is watching",
+            f"{ticker} is on the board, but it still needs a cleaner trigger, stronger data, or better risk/reward before approval.",
+            f"{ticker} - {status} - {confidence}",
+        )
+
+    selected = normalize_user_symbol(st.session_state.get("selected_ticker", ""))
+    stock = selected or "your top stock"
+    return (
+        "Meet Scout",
+        f"Scout follows {stock}, keeps the next step readable, and reminds beginners to verify data, entry, stop, target, and news before any paper approval.",
+        "AI companion - paper trading only",
+    )
+
+
+def companion_card_html(title: str, message: str, chip: str, context: str = "card") -> str:
+    safe_context = "".join(ch for ch in str(context).lower() if ch.isalnum() or ch in {"-", "_"}) or "card"
+    return """
+    <div class="msa-companion-card msa-companion-{context}">
+      <div class="msa-companion-inner">
+        {bot}
+        <div>
+          <div class="msa-companion-kicker">AI companion</div>
+          <div class="msa-companion-title">{title}</div>
+          <div class="msa-companion-message">{message}</div>
+          <div class="msa-companion-chip">{chip}</div>
+        </div>
+      </div>
+    </div>
+    """.format(
+        context=html.escape(safe_context),
+        bot=ai_companion_svg(),
+        title=html.escape(title),
+        message=html.escape(message),
+        chip=html.escape(chip),
+    )
+
+
+def render_companion_card(analysis: dict[str, Any] | None = None, context: str = "card") -> None:
+    title, message, chip = companion_copy(analysis)
+    st.markdown(companion_card_html(title, message, chip, context=context), unsafe_allow_html=True)
+
+
+def render_sidebar_brand() -> None:
+    st.sidebar.markdown(
+        """
+        <div class="msa-sidebar-brand">
+          <div class="msa-sidebar-logo">
+            {logo}
+            <div>
+              <strong>{name}</strong>
+              <span>Momentum scanner and learning lab</span>
+            </div>
+          </div>
+        </div>
+        """.format(
+            logo=brand_mark_svg(),
+            name=html.escape(APP_NAME),
+        ),
+        unsafe_allow_html=True,
+    )
+    with st.sidebar:
+        render_companion_card(context="sidebar")
+
+
 def dashboard_hero() -> None:
+    title, message, chip = companion_copy()
     st.markdown(
         f"""
         <div class="msa-hero">
-            <h1>{html.escape(APP_NAME)}</h1>
-            <p>Live scanners, chart levels, stock news, paper-trade planning, and a learning system for studying momentum without guessing.</p>
+          <div class="msa-hero-grid">
+            <div>
+              <div class="msa-logo-lockup">
+                {brand_mark_svg()}
+                <div class="msa-logo-copy">
+                  <span>Beginner momentum lab</span>
+                  <strong>{html.escape(APP_NAME)}</strong>
+                </div>
+              </div>
+              <h1>{html.escape(APP_NAME)}</h1>
+              <p>Live scanners, chart levels, stock news, paper-trade planning, and a learning system for studying momentum without guessing.</p>
+              <div class="msa-hero-badges">
+                <span class="msa-hero-badge">Real charts</span>
+                <span class="msa-hero-badge">AI plan helper</span>
+                <span class="msa-hero-badge">Beginner lessons</span>
+                <span class="msa-hero-badge">Paper approval gate</span>
+              </div>
+            </div>
+            {companion_card_html(title, message, chip, context="hero")}
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -7030,6 +7348,7 @@ def page_dashboard() -> None:
             ("Top RVOL", f"{best['RVOL']:.1f}x", "calm"),
         ]
     )
+    render_companion_card(best, context="dashboard")
     render_market_pulse(df, context="dashboard")
     render_workflow_cockpit(best, str(best.get("Data source", "n/a")), context="dashboard")
     render_action_queue(df, key="dashboard_action_queue")
@@ -8323,8 +8642,10 @@ def page_learn() -> None:
 
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon=":material/monitoring:", layout="wide")
-    mode = display_mode_control()
+    mode = str(st.session_state.get("display_mode", "Dark"))
     apply_style(mode)
+    render_sidebar_brand()
+    display_mode_control()
     pages = [
         st.Page(page_dashboard, title="Dashboard", icon=":material/dashboard:"),
         st.Page(page_daily_gameplan, title="Daily Gameplan", icon=":material/event_note:", url_path="Daily_Gameplan"),
