@@ -2978,6 +2978,153 @@ def journal_stats(df: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def journal_display_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    display = df.copy()
+    if "Date" in display.columns:
+        display["Date"] = pd.to_datetime(display["Date"], errors="coerce")
+    for column in ["Entry", "Exit", "Stop", "Shares", "P/L $", "P/L %", "R multiple"]:
+        if column in display.columns:
+            display[column] = pd.to_numeric(display[column], errors="coerce")
+    return display
+
+
+def journal_column_config() -> dict[str, Any]:
+    return {
+        "Date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+        "Ticker": st.column_config.TextColumn("Stock", pinned=True),
+        "Entry": st.column_config.NumberColumn("Entry", format="$%.4f"),
+        "Exit": st.column_config.NumberColumn("Exit", format="$%.4f"),
+        "Stop": st.column_config.NumberColumn("Stop", format="$%.4f"),
+        "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+        "P/L $": st.column_config.NumberColumn("P/L", format="$%.2f"),
+        "P/L %": st.column_config.NumberColumn("P/L %", format="%.2f%%"),
+        "R multiple": st.column_config.NumberColumn("R", format="%.2f"),
+        "Notes": st.column_config.TextColumn("Review notes"),
+    }
+
+
+def journal_review_snapshot(df: pd.DataFrame) -> dict[str, Any]:
+    display = journal_display_frame(df)
+    if display.empty:
+        return {
+            "trades": 0,
+            "expectancy_r": 0.0,
+            "avg_win_r": 0.0,
+            "avg_loss_r": 0.0,
+            "best_r": 0.0,
+            "worst_r": 0.0,
+            "best_stock": "n/a",
+            "worst_stock": "n/a",
+            "common_setup": "n/a",
+            "review_tags": pd.DataFrame(columns=["Tag", "Count"]),
+            "coaching": ["Save a few paper trades, then the review coach will start finding patterns."],
+            "equity": pd.DataFrame(columns=["Date", "Cumulative P/L"]),
+        }
+
+    pl = pd.to_numeric(display.get("P/L $"), errors="coerce").fillna(0)
+    r_mult = pd.to_numeric(display.get("R multiple"), errors="coerce").fillna(0)
+    wins = r_mult[r_mult > 0]
+    losses = r_mult[r_mult < 0]
+    best_index = int(r_mult.idxmax()) if len(r_mult) else 0
+    worst_index = int(r_mult.idxmin()) if len(r_mult) else 0
+    setup_counts = display["Setup"].astype(str).replace("", "Unknown setup").value_counts()
+
+    tag_keywords = {
+        "Chased entry": ["chase", "late", "fomo", "too high"],
+        "Stop issue": ["stop", "held", "ignored", "moved stop"],
+        "News miss": ["news", "catalyst", "offering", "dilution"],
+        "Spread/slippage": ["spread", "slippage", "fill"],
+        "Size too big": ["size", "oversized", "too many shares"],
+        "No plan": ["no plan", "guess", "random"],
+    }
+    tag_counts = {tag: 0 for tag in tag_keywords}
+    for note in display["Notes"].fillna("").astype(str):
+        lowered = note.lower()
+        for tag, keywords in tag_keywords.items():
+            if any(keyword in lowered for keyword in keywords):
+                tag_counts[tag] += 1
+    review_tags = pd.DataFrame(
+        [{"Tag": tag, "Count": count} for tag, count in tag_counts.items() if count > 0]
+    ).sort_values("Count", ascending=False) if any(tag_counts.values()) else pd.DataFrame(columns=["Tag", "Count"])
+
+    coaching: list[str] = []
+    expectancy = float(r_mult.mean()) if len(r_mult) else 0.0
+    avg_win = float(wins.mean()) if len(wins) else 0.0
+    avg_loss = float(losses.mean()) if len(losses) else 0.0
+    win_rate = len(wins) / max(len(r_mult), 1) * 100
+    worst_r = float(r_mult.min()) if len(r_mult) else 0.0
+    if len(display) < 5:
+        coaching.append("Keep collecting paper trades. Fewer than five trades is too small to judge the system.")
+    if expectancy < 0:
+        coaching.append("Expectancy is negative. Prioritize smaller losses, cleaner entries, and skipping weak setups.")
+    elif expectancy > 0:
+        coaching.append("Expectancy is positive in this sample. Keep checking whether wins came from following the plan, not luck.")
+    if worst_r <= -2:
+        coaching.append("Your worst loss is larger than -2R. Review whether the stop was respected and whether size was too high.")
+    if win_rate < 40 and avg_win <= abs(avg_loss):
+        coaching.append("Win rate is low and average wins are not bigger than losses. Tighten entry quality before adding risk.")
+    if not review_tags.empty:
+        top_tag = str(review_tags.iloc[0]["Tag"])
+        coaching.append(f"Most repeated review tag: {top_tag}. Make that the next rule to improve.")
+    if not coaching:
+        coaching.append("The sample is balanced so far. Keep journaling skipped trades and rule-following, not only winners.")
+
+    equity = display[["Date", "P/L $"]].dropna().sort_values("Date").copy()
+    if not equity.empty:
+        equity["Cumulative P/L"] = pd.to_numeric(equity["P/L $"], errors="coerce").fillna(0).cumsum()
+
+    return {
+        "trades": int(len(display)),
+        "expectancy_r": expectancy,
+        "avg_win_r": avg_win,
+        "avg_loss_r": avg_loss,
+        "best_r": float(r_mult.max()) if len(r_mult) else 0.0,
+        "worst_r": worst_r,
+        "best_stock": str(display.loc[best_index, "Ticker"]) if len(display) else "n/a",
+        "worst_stock": str(display.loc[worst_index, "Ticker"]) if len(display) else "n/a",
+        "common_setup": str(setup_counts.index[0]) if len(setup_counts) else "n/a",
+        "review_tags": review_tags,
+        "coaching": coaching[:4],
+        "equity": equity,
+    }
+
+
+def render_journal_review_panel(df: pd.DataFrame) -> None:
+    review = journal_review_snapshot(df)
+    with st.container(border=True):
+        st.markdown("**Review coach**")
+        st.caption("This reads your paper-trade history for patterns. It is for learning discipline, not predicting future trades.")
+        cols = st.columns(4)
+        cols[0].metric("Expectancy", f"{review['expectancy_r']:.2f}R", border=True)
+        cols[1].metric("Average win", f"{review['avg_win_r']:.2f}R", border=True)
+        cols[2].metric("Average loss", f"{review['avg_loss_r']:.2f}R", border=True)
+        cols[3].metric("Common setup", str(review["common_setup"]), border=True)
+
+        detail_cols = st.columns([1, 1, 1.2])
+        detail_cols[0].metric("Best trade", f"{review['best_r']:.2f}R", str(review["best_stock"]), border=True)
+        detail_cols[1].metric("Worst trade", f"{review['worst_r']:.2f}R", str(review["worst_stock"]), border=True)
+        with detail_cols[2]:
+            for item in review["coaching"]:
+                st.caption(item)
+
+        equity = review["equity"]
+        if not equity.empty:
+            st.line_chart(equity, x="Date", y="Cumulative P/L", height=180)
+        tags = review["review_tags"]
+        if not tags.empty:
+            st.dataframe(
+                tags,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Tag": st.column_config.TextColumn("Review tag", pinned=True),
+                    "Count": st.column_config.ProgressColumn("Count", min_value=0, max_value=max(int(tags["Count"].max()), 1)),
+                },
+            )
+
+
 def backtest_strategy(
     ticker: str,
     period: str,
@@ -8822,6 +8969,8 @@ def page_journal() -> None:
     cols[2].metric("Total P/L", money(stats["total_pl"]))
     cols[3].metric("Average R", f"{stats['avg_r']:.2f}R")
 
+    render_journal_review_panel(df)
+
     with st.form("journal_entry"):
         top = st.columns([1, 1, 2])
         trade_date = top[0].date_input("Date", value=date.today())
@@ -8862,7 +9011,49 @@ def page_journal() -> None:
     if df.empty:
         st.info("No journal entries yet.")
     else:
-        st.dataframe(df.sort_values("Date", ascending=False), width="stretch", hide_index=True)
+        display_df = journal_display_frame(df)
+        with st.container(border=True):
+            st.markdown("**Journal entries**")
+            filter_cols = st.columns([1, 1, 1.4], vertical_alignment="bottom")
+            stocks = ["All", *sorted(display_df["Ticker"].dropna().astype(str).unique().tolist())]
+            stock_filter = filter_cols[0].selectbox("Stock filter", stocks, key="journal_stock_filter")
+            result_filter = filter_cols[1].segmented_control(
+                "Result",
+                ["All", "Wins", "Losses", "Flat"],
+                default="All",
+                key="journal_result_filter",
+            )
+            query = filter_cols[2].text_input(
+                "Search notes/setup",
+                value="",
+                placeholder="Try chase, stop, news, spread, setup",
+                key="journal_note_search",
+            )
+            filtered_df = display_df.copy()
+            if stock_filter != "All":
+                filtered_df = filtered_df[filtered_df["Ticker"].astype(str) == str(stock_filter)]
+            if result_filter == "Wins":
+                filtered_df = filtered_df[pd.to_numeric(filtered_df["P/L $"], errors="coerce").fillna(0) > 0]
+            elif result_filter == "Losses":
+                filtered_df = filtered_df[pd.to_numeric(filtered_df["P/L $"], errors="coerce").fillna(0) < 0]
+            elif result_filter == "Flat":
+                filtered_df = filtered_df[pd.to_numeric(filtered_df["P/L $"], errors="coerce").fillna(0) == 0]
+            query_text = str(query or "").strip().lower()
+            if query_text:
+                searchable = (
+                    filtered_df["Setup"].fillna("").astype(str)
+                    + " "
+                    + filtered_df["Notes"].fillna("").astype(str)
+                ).str.lower()
+                filtered_df = filtered_df[searchable.str.contains(query_text, regex=False, na=False)]
+
+            st.caption(f"Showing {len(filtered_df)} of {len(display_df)} journal rows.")
+            st.dataframe(
+                filtered_df.sort_values("Date", ascending=False),
+                width="stretch",
+                hide_index=True,
+                column_config=journal_column_config(),
+            )
 
 
 def page_backtester() -> None:
