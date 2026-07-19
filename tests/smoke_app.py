@@ -27,9 +27,15 @@ def main() -> None:
     green_case["Quote time"] = app.datetime.now().strftime("%Y-%m-%d %I:%M %p")
     green_case["Price"] = float(green_case["Entry trigger price"]) * 1.001
     assert app.ai_signal_light(green_case)["color"] == "green"
+    assert app.ai_now_steps(green_case, "Trigger active", "Breakout trigger")[0].startswith("Green light")
+    assert "green means" in app.beginner_trade_translation(green_case, "Trigger active").lower()
     blue_case = dict(green_case)
     blue_case["Price"] = float(blue_case["Target 1 price"]) * 1.001
     assert app.ai_signal_light(blue_case)["color"] == "blue"
+    assert app.ai_now_steps(blue_case, "Trigger active", "Breakout trigger")[0].startswith("Blue light")
+    assert "blue means" in app.beginner_trade_translation(blue_case, "Trigger active").lower()
+    red_steps = app.ai_now_steps(analysis, "Watch only", "Watching")
+    assert red_steps[0].startswith("Red light")
     assert app.setup_completion(analysis)[1] == 7
     levels = app.chart_trade_levels(analysis)
     assert levels["entry"] and levels["stop"] and levels["target_1"]

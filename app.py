@@ -91,17 +91,17 @@ AI_COMPANION_CSS = """
   right: 22px;
   bottom: 24px;
   z-index: 2147483000;
-  width: min(336px, calc(100vw - 28px));
+  width: min(276px, calc(100vw - 24px));
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 7px;
   align-items: end;
   pointer-events: none;
   user-select: none;
 }
 .pet-shell.pet-focus {
-  width: min(392px, calc(100vw - 28px));
-  grid-template-columns: 124px minmax(0, 1fr);
+  width: min(318px, calc(100vw - 24px));
+  grid-template-columns: 84px minmax(0, 1fr);
 }
 .pet-shell.pet-hidden {
   display: none;
@@ -109,12 +109,12 @@ AI_COMPANION_CSS = """
 .pet-bubble {
   pointer-events: auto;
   border: 1px solid var(--pet-border);
-  border-radius: 14px;
+  border-radius: 9px;
   background: var(--pet-panel);
   color: var(--pet-text);
   box-shadow: 0 18px 44px rgba(0, 0, 0, .34);
-  padding: 11px 12px;
-  min-height: 84px;
+  padding: 9px 10px;
+  min-height: 76px;
   backdrop-filter: blur(14px);
 }
 .pet-ready .pet-bubble {
@@ -135,7 +135,7 @@ AI_COMPANION_CSS = """
 }
 .pet-kicker {
   color: var(--pet-accent);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -157,7 +157,7 @@ AI_COMPANION_CSS = """
   padding: 3px 8px;
   background: rgba(255, 255, 255, .05);
   color: var(--pet-text);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
 }
 .pet-status-light {
@@ -172,7 +172,7 @@ AI_COMPANION_CSS = """
 .pet-status-time {
   flex: 0 0 auto;
   color: var(--pet-muted);
-  font-size: 10px;
+  font-size: 9px;
 }
 .pet-ready .pet-status-light {
   background: #00C805;
@@ -210,26 +210,26 @@ AI_COMPANION_CSS = """
 .pet-message {
   margin-top: 5px;
   color: var(--pet-text);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.28;
-  min-height: 49px;
+  min-height: 40px;
 }
 .pet-controls {
   display: flex;
   gap: 6px;
-  margin-top: 9px;
+  margin-top: 7px;
 }
 .pet-control {
   display: grid;
   place-items: center;
-  min-width: 36px;
-  height: 24px;
+  min-width: 34px;
+  height: 22px;
   border: 1px solid var(--pet-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, .04);
   color: var(--pet-muted);
   padding: 0 8px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 850;
   cursor: pointer;
 }
@@ -239,8 +239,8 @@ AI_COMPANION_CSS = """
 }
 .pet-stage {
   pointer-events: auto;
-  width: 104px;
-  height: 144px;
+  width: 76px;
+  height: 112px;
   position: relative;
   cursor: grab;
   touch-action: none;
@@ -249,17 +249,17 @@ AI_COMPANION_CSS = """
 }
 .pet-focus .pet-stage {
   transform-origin: bottom center;
-  scale: 1.12;
+  scale: 1.08;
 }
 .pet-stage:active {
   cursor: grabbing;
 }
 .pet-shadow {
   position: absolute;
-  left: 21px;
+  left: 18px;
   bottom: 0;
-  width: 62px;
-  height: 14px;
+  width: 40px;
+  height: 10px;
   border-radius: 999px;
   background: rgba(0, 0, 0, .32);
   filter: blur(2px);
@@ -267,44 +267,85 @@ AI_COMPANION_CSS = """
 }
 .pet-body {
   position: absolute;
-  left: 17px;
-  bottom: 14px;
-  width: 70px;
-  height: 76px;
-  border-radius: 28px 28px 20px 20px;
+  left: 18px;
+  bottom: 12px;
+  width: 40px;
+  height: 51px;
+  border-radius: 9px 9px 6px 6px;
   background:
-    radial-gradient(circle at 50% 12%, rgba(255, 255, 255, .18), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--pet-accent) 28%, #101821) 0%, #101821 72%);
-  border: 3px solid var(--pet-accent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), inset 0 -20px 28px rgba(0, 0, 0, .24);
+    linear-gradient(135deg, rgba(255, 255, 255, .13) 0 15%, transparent 16%),
+    linear-gradient(180deg, color-mix(in srgb, var(--pet-accent) 18%, #162132) 0%, #0F1722 80%);
+  border: 2px solid var(--pet-accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), inset 0 -14px 22px rgba(0, 0, 0, .24);
   overflow: hidden;
+}
+.pet-body:before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pet-accent) 62%, transparent);
+}
+.pet-shoulders {
+  position: absolute;
+  left: 11px;
+  bottom: 59px;
+  width: 54px;
+  height: 15px;
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, #152030, #101821);
+  border: 2px solid var(--pet-accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+}
+.pet-neck {
+  position: absolute;
+  left: 32px;
+  bottom: 65px;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: #101821;
+  border: 2px solid var(--pet-accent);
 }
 .pet-chest {
   position: absolute;
-  left: 11px;
-  top: 12px;
-  width: 48px;
-  height: 38px;
-  border-radius: 16px;
+  left: 6px;
+  top: 9px;
+  width: 28px;
+  height: 24px;
+  border-radius: 5px;
   border: 1px solid rgba(148, 163, 184, .28);
   background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02));
 }
+.pet-chest:after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 5px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pet-accent) 72%, #293546);
+}
 .pet-belt {
   position: absolute;
-  left: 11px;
-  right: 11px;
-  bottom: 16px;
-  height: 7px;
-  border-radius: 999px;
+  left: 6px;
+  right: 6px;
+  bottom: 10px;
+  height: 4px;
+  border-radius: 2px;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--pet-accent) 62%, #293546), transparent);
 }
 .pet-core {
   position: absolute;
-  left: 23px;
-  top: 19px;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
+  left: 15px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
   background: #00C805;
   box-shadow: 0 0 16px color-mix(in srgb, var(--pet-accent) 65%, transparent);
 }
@@ -331,204 +372,217 @@ AI_COMPANION_CSS = """
 }
 .pet-head {
   position: absolute;
-  left: 6px;
-  bottom: 78px;
-  width: 92px;
-  height: 66px;
-  border-radius: 26px;
+  left: 11px;
+  bottom: 70px;
+  width: 54px;
+  height: 41px;
+  border-radius: 11px 11px 9px 9px;
   background:
     radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--pet-accent) 28%, transparent), transparent 48%),
     linear-gradient(180deg, #172232 0%, #101821 100%);
-  border: 3px solid var(--pet-accent);
+  border: 2px solid var(--pet-accent);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), 0 0 22px color-mix(in srgb, var(--pet-accent) 20%, transparent);
   animation: pet-head 5.4s ease-in-out infinite;
 }
 .pet-head:before {
   content: "";
   position: absolute;
-  inset: 8px 10px auto 10px;
-  height: 10px;
+  inset: 6px 8px auto 8px;
+  height: 6px;
   border-radius: 999px;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .17), transparent);
 }
 .pet-ear {
   position: absolute;
-  bottom: 103px;
-  width: 16px;
-  height: 30px;
-  border-radius: 12px;
+  bottom: 84px;
+  width: 9px;
+  height: 19px;
+  border-radius: 5px;
   background: #101821;
-  border: 3px solid var(--pet-accent);
+  border: 2px solid var(--pet-accent);
 }
 .pet-ear-left {
-  left: 0;
+  left: 7px;
   rotate: -14deg;
 }
 .pet-ear-right {
-  right: 0;
+  right: 7px;
   rotate: 14deg;
 }
 .pet-crest {
   position: absolute;
-  left: 45px;
-  bottom: 141px;
-  width: 14px;
-  height: 20px;
-  border-radius: 999px 999px 4px 4px;
+  left: 33px;
+  bottom: 107px;
+  width: 10px;
+  height: 13px;
+  border-radius: 5px 5px 2px 2px;
   background: var(--pet-accent);
   box-shadow: 0 0 18px color-mix(in srgb, var(--pet-accent) 70%, transparent);
 }
 .pet-antenna {
   position: absolute;
-  left: 50px;
-  bottom: 141px;
-  width: 4px;
-  height: 18px;
+  left: 36px;
+  bottom: 107px;
+  width: 3px;
+  height: 12px;
   border-radius: 999px;
   background: var(--pet-accent);
 }
 .pet-antenna:after {
   content: "";
   position: absolute;
-  left: -6px;
-  top: -12px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
+  left: -4px;
+  top: -9px;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
   background: #00C805;
   box-shadow: 0 0 18px color-mix(in srgb, var(--pet-accent) 70%, transparent);
 }
 .pet-face {
   position: absolute;
-  left: 12px;
-  top: 13px;
-  width: 68px;
-  height: 40px;
-  border-radius: 16px;
+  left: 7px;
+  top: 9px;
+  width: 38px;
+  height: 23px;
+  border-radius: 6px;
   background: #0B1117;
   border: 1px solid rgba(148, 163, 184, .24);
   overflow: hidden;
 }
-.pet-avatar-face {
+.pet-face:before {
+  content: "";
   position: absolute;
-  inset: -18px -7px -8px -7px;
-  width: calc(100% + 14px);
-  height: calc(100% + 26px);
-  object-fit: cover;
+  left: 5px;
+  right: 5px;
+  top: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+}
+.pet-avatar-decal {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  opacity: .32;
+  mix-blend-mode: screen;
   pointer-events: none;
 }
 .pet-eye {
   position: absolute;
-  top: 13px;
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
   background: #00C805;
   animation: pet-blink 4.8s infinite;
 }
 .pet-eye-left {
-  left: 17px;
+  left: 9px;
 }
 .pet-eye-right {
-  right: 17px;
+  right: 9px;
 }
 .pet-mouth {
   position: absolute;
-  left: 26px;
-  bottom: 7px;
-  width: 16px;
-  height: 6px;
-  border-bottom: 3px solid var(--pet-muted);
+  left: 13px;
+  bottom: 5px;
+  width: 12px;
+  height: 4px;
+  border-bottom: 2px solid var(--pet-muted);
   border-radius: 999px;
 }
 .pet-arm {
   position: absolute;
-  bottom: 56px;
-  width: 16px;
-  height: 44px;
-  border-radius: 999px;
+  bottom: 38px;
+  width: 8px;
+  height: 31px;
+  border-radius: 5px;
   background: #101821;
-  border: 3px solid var(--pet-accent);
+  border: 2px solid var(--pet-accent);
   transform-origin: top center;
 }
 .pet-arm-left {
-  left: 2px;
+  left: 8px;
   rotate: 16deg;
   animation: pet-wave-left 5.8s ease-in-out infinite;
 }
 .pet-arm-right {
-  right: 2px;
+  right: 8px;
   rotate: -16deg;
   animation: pet-wave-right 6.2s ease-in-out infinite;
 }
 .pet-hand {
   position: absolute;
-  bottom: 48px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
+  bottom: 33px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
   background: color-mix(in srgb, var(--pet-accent) 54%, #101821);
   border: 2px solid #101821;
 }
 .pet-hand-left {
-  left: 0;
+  left: 6px;
 }
 .pet-hand-right {
-  right: 0;
+  right: 6px;
 }
 .pet-leg {
   position: absolute;
   bottom: 4px;
-  width: 19px;
-  height: 23px;
-  border-radius: 9px;
+  width: 9px;
+  height: 16px;
+  border-radius: 3px;
   background: #101821;
-  border: 3px solid var(--pet-accent);
+  border: 2px solid var(--pet-accent);
 }
 .pet-leg-left {
-  left: 29px;
+  left: 24px;
 }
 .pet-leg-right {
-  right: 29px;
+  right: 24px;
 }
 .pet-foot {
   position: absolute;
   bottom: 0;
-  width: 29px;
-  height: 12px;
-  border-radius: 999px;
+  width: 17px;
+  height: 8px;
+  border-radius: 4px;
   background: #101821;
   border: 2px solid var(--pet-accent);
 }
 .pet-foot-left {
-  left: 21px;
+  left: 19px;
 }
 .pet-foot-right {
-  right: 21px;
+  right: 19px;
 }
 .pet-spark {
   position: absolute;
   border-radius: 999px;
   background: var(--pet-accent);
-  opacity: .85;
+  opacity: .38;
   box-shadow: 0 0 14px var(--pet-accent);
 }
 .pet-spark-one {
-  width: 7px;
-  height: 7px;
-  left: 7px;
-  top: 27px;
+  width: 5px;
+  height: 5px;
+  left: 8px;
+  top: 25px;
   animation: pet-orbit-one 4s linear infinite;
 }
 .pet-spark-two {
-  width: 5px;
-  height: 5px;
-  right: 6px;
-  top: 56px;
+  width: 4px;
+  height: 4px;
+  right: 8px;
+  top: 48px;
   animation: pet-orbit-two 5s linear infinite;
 }
 .pet-wander {
-  animation: pet-wander 24s ease-in-out infinite;
+  animation: pet-wander 42s ease-in-out infinite;
 }
 .pet-manual {
   animation: none;
@@ -538,19 +592,19 @@ AI_COMPANION_CSS = """
   display: none;
 }
 .pet-style-defensive .pet-head {
-  border-radius: 34px 34px 24px 24px;
+  border-radius: 19px 19px 12px 12px;
 }
 .pet-style-curious .pet-crest {
-  width: 20px;
-  left: 42px;
+  width: 14px;
+  left: 34px;
   border-radius: 999px;
   opacity: .86;
 }
 .pet-style-aggressive .pet-crest {
-  width: 18px;
-  height: 31px;
-  left: 44px;
-  bottom: 136px;
+  width: 12px;
+  height: 22px;
+  left: 35px;
+  bottom: 108px;
   border-radius: 3px 999px 3px 999px;
   rotate: 12deg;
 }
@@ -660,8 +714,9 @@ export default function(component) {
   let tipIndex = ((savedTipIndex % messages.length) + messages.length) % messages.length
   const message = String(messages[tipIndex] || "")
   const avatarMarkup = avatar
-    ? `<img class="pet-avatar-face" alt="" src="${escapeHtml(avatar)}">`
-    : `<div class="pet-eye pet-eye-left"></div><div class="pet-eye pet-eye-right"></div><div class="pet-mouth"></div>`
+    ? `<img class="pet-avatar-decal" alt="" src="${escapeHtml(avatar)}">`
+    : ""
+  const faceMarkup = `<div class="pet-eye pet-eye-left"></div><div class="pet-eye pet-eye-right"></div><div class="pet-mouth"></div>`
   const shellClass = ["pet-shell", `pet-${safeMood}`, `pet-style-${safeStyle}`]
   if (mode === "Wander") shellClass.push("pet-wander")
   if (mode === "Focus") shellClass.push("pet-focus")
@@ -683,10 +738,12 @@ export default function(component) {
         <div class="pet-arm pet-arm-right"></div>
         <div class="pet-hand pet-hand-left"></div>
         <div class="pet-hand pet-hand-right"></div>
-        <div class="pet-body"><div class="pet-chest"></div><div class="pet-core"></div><div class="pet-belt"></div></div>
+        <div class="pet-neck"></div>
+        <div class="pet-shoulders"></div>
+        <div class="pet-body">${avatarMarkup}<div class="pet-chest"></div><div class="pet-core"></div><div class="pet-belt"></div></div>
         <div class="pet-head">
           <div class="pet-face">
-            ${avatarMarkup}
+            ${faceMarkup}
           </div>
         </div>
         <div class="pet-leg pet-leg-left"></div>
@@ -716,10 +773,12 @@ export default function(component) {
   const homeButton = root.querySelector(".pet-home")
   if (!shell || !stage) return
 
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
   if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+    const rect = shell.getBoundingClientRect()
     shell.classList.add("pet-manual")
-    shell.style.left = `${Math.max(8, Math.min(saved.left, window.innerWidth - 120))}px`
-    shell.style.top = `${Math.max(8, Math.min(saved.top, window.innerHeight - 120))}px`
+    shell.style.left = `${clamp(saved.left, 8, window.innerWidth - rect.width - 8)}px`
+    shell.style.top = `${clamp(saved.top, 8, window.innerHeight - rect.height - 8)}px`
     shell.style.right = "auto"
     shell.style.bottom = "auto"
   }
@@ -729,7 +788,6 @@ export default function(component) {
   let offsetY = 0
   let lastPosition = null
 
-  const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
   const moveTo = (left, top) => {
     const rect = shell.getBoundingClientRect()
     const nextLeft = clamp(left, 8, window.innerWidth - rect.width - 8)
@@ -5465,7 +5523,7 @@ def ai_signal_light(analysis: dict[str, Any], chart_source: str | None = None) -
             "mood": "sell",
             "label": "Blue light",
             "action": "Sell / trim",
-            "detail": f"Price is at or above target 1 near {money(target_1)}. Review taking profit on the paper plan.",
+            "detail": f"Price is at or above target 1 near {money(target_1)}. Lock in practice profit or trim the paper plan.",
         }
 
     if status in {"Below stop", "No quote"} or label in {"Plan invalid", "Study only"}:
@@ -5475,7 +5533,7 @@ def ai_signal_light(analysis: dict[str, Any], chart_source: str | None = None) -
             "mood": "danger",
             "label": "Red light",
             "action": "Do not buy",
-            "detail": "The setup is invalid, missing a quote, or too weak for this momentum playbook.",
+            "detail": "The setup is invalid, missing a quote, or too weak for this momentum playbook. Stand down.",
         }
 
     if weak_data:
@@ -5485,7 +5543,7 @@ def ai_signal_light(analysis: dict[str, Any], chart_source: str | None = None) -
             "mood": "danger",
             "label": "Red light",
             "action": "Verify first",
-            "detail": f"Data confidence is {confidence['label']}. Check another source before using this setup.",
+            "detail": f"Data confidence is {confidence['label']}. Do not buy until another source confirms the quote.",
         }
 
     if status == "Breakout trigger" and not too_many_missing_checks and (rr_1 is None or rr_1 >= 1.2):
@@ -5494,8 +5552,8 @@ def ai_signal_light(analysis: dict[str, Any], chart_source: str | None = None) -
             "color": "green",
             "mood": "ready",
             "label": "Green light",
-            "action": "Paper buy review",
-            "detail": "Entry trigger is active. Confirm news, spread, volume, and risk before approval.",
+            "action": "Buy review",
+            "detail": "Entry trigger is active. This is review-ready only after news, spread, volume, and risk pass.",
         }
 
     return {
@@ -5504,7 +5562,7 @@ def ai_signal_light(analysis: dict[str, Any], chart_source: str | None = None) -
         "mood": "danger",
         "label": "Red light",
         "action": "Wait",
-        "detail": "The stock is not at a clean buy trigger yet. Keep watching instead of chasing.",
+        "detail": "The stock is not at a clean buy trigger yet. Wait for the chart instead of chasing.",
     }
 
 
@@ -5596,13 +5654,38 @@ def render_setup_command_strip(
         st.link_button("Open Journal", "/Journal", icon=":material/edit_note:", width="stretch")
 
 
-def ai_now_steps(analysis: dict[str, Any], label: str, status: str) -> list[str]:
+def ai_now_steps(
+    analysis: dict[str, Any],
+    label: str,
+    status: str,
+    chart_source: str | None = None,
+) -> list[str]:
     math_data = ai_trade_math(analysis)
     entry = money(math_data["entry"])
     stop = money(math_data["stop"])
     risk = money(math_data["risk"])
     target = money(math_data["target_1"])
     confidence = data_confidence_summary(analysis).get("label", "Verify first")
+    signal = ai_signal_light(analysis, chart_source)
+
+    if signal["tone"] == "sell":
+        return [
+            f"Blue light: price is at the first take-profit area near {target}.",
+            "Review a paper sell/trim instead of opening a new buy.",
+            "Update the journal with whether the target hit cleanly or reversed.",
+        ]
+    if signal["tone"] == "danger":
+        return [
+            f"Red light: {signal['detail']}",
+            f"Do not approve a buy. Wait for a clean trigger near {entry} or rebuild the plan.",
+            f"Keep the invalidation line visible near {stop} before studying it again.",
+        ]
+    if signal["tone"] == "ready":
+        return [
+            f"Green light review: confirm the last candle is holding above {entry}.",
+            f"Check the stop at {stop}; planned risk is {risk} per share.",
+            f"Approve only if news, spread, volume, and {confidence.lower()} data all make sense.",
+        ]
 
     if label == "Trigger active" or status == "Breakout trigger":
         return [
@@ -5654,11 +5737,22 @@ def ai_cancel_rules(analysis: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(rules))[:5]
 
 
-def beginner_trade_translation(analysis: dict[str, Any], label: str) -> str:
+def beginner_trade_translation(
+    analysis: dict[str, Any],
+    label: str,
+    signal: dict[str, str] | None = None,
+) -> str:
     math_data = ai_trade_math(analysis)
     entry = money(math_data["entry"])
     stop = money(math_data["stop"])
     target = money(math_data["target_1"])
+    active_signal = signal or ai_signal_light(analysis)
+    if active_signal["tone"] == "sell":
+        return f"Plain English: blue means this paper plan is at a profit-taking area near {target}. Do not start a fresh buy here; review a sell or trim."
+    if active_signal["tone"] == "ready":
+        return f"Plain English: green means the setup is ready to review, not an automatic buy. Entry is around {entry}, stop is {stop}, and target 1 is {target}."
+    if active_signal["tone"] == "danger":
+        return f"Plain English: red means no buy. The app wants you to wait, verify data, or rebuild the setup before risking even a paper trade."
     if label == "Trigger active":
         return f"Plain English: buyers may be confirming the idea now. The paper entry is around {entry}, the safety line is {stop}, and the first place to take profit is {target}."
     if label == "In buy zone":
@@ -5880,7 +5974,7 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
 
         render_ai_plan_ladder(analysis, chart_source)
 
-        now_items = ai_now_steps(analysis, label, status)
+        now_items = ai_now_steps(analysis, label, status, chart_source)
         cancel_items = ai_cancel_rules(analysis)
         left, right = st.columns(2)
         render_html(
@@ -5892,7 +5986,7 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
             target=right,
         )
         render_html(
-            f'<div class="msa-ai-plain">{html.escape(beginner_trade_translation(analysis, label))}</div>',
+            f'<div class="msa-ai-plain">{html.escape(beginner_trade_translation(analysis, label, signal))}</div>',
         )
         st.caption("Educational paper-trading decision aid. It does not place real trades and it is not financial advice.")
 
