@@ -6,6 +6,7 @@ import os
 import html
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 from urllib.parse import quote as url_quote
 
@@ -349,6 +350,19 @@ def compact_number(value: float | int | None) -> str:
 
 def markdown_text(value: Any) -> str:
     return str(value).replace("$", "\\$")
+
+
+def clean_html_markup(markup: Any) -> str:
+    return dedent(str(markup or "")).strip()
+
+
+def render_html(markup: Any, target: Any | None = None) -> None:
+    renderer = target or st
+    cleaned = clean_html_markup(markup)
+    if hasattr(renderer, "html"):
+        renderer.html(cleaned)
+    else:
+        renderer.markdown(cleaned, unsafe_allow_html=True)
 
 
 def playbook_fit_label(stats: dict[str, Any], score: float | int | None = None) -> str:
@@ -2110,13 +2124,12 @@ def render_data_stack_panel(compact: bool = False) -> None:
             st.badge("Free feeds", icon=":material/savings:", color="blue")
             st.badge("Paper-trading only", icon=":material/edit_note:", color="blue")
         if not compact:
-            st.markdown(provider_cards_html(items), unsafe_allow_html=True)
-        st.markdown(
+            render_html(provider_cards_html(items))
+        render_html(
             '<div class="msa-source-flow">'
             '<b>Source order:</b> regular-stock candles try Alpaca IEX first, then Yahoo-style chart fallback, then learning data. '
             'Quotes and news use Finnhub when available. Indexes like S&P 500 use Yahoo-style symbols because Alpaca IEX is a stock feed.'
             '</div>',
-            unsafe_allow_html=True,
         )
 
 
@@ -2493,7 +2506,8 @@ def display_mode_control() -> str:
 
 def apply_style(mode: str | None = None) -> None:
     palette = theme_palette(mode)
-    st.markdown(
+    st.html(
+        clean_html_markup(
         f"""
         <style>
         :root {{
@@ -3401,13 +3415,14 @@ def apply_style(mode: str | None = None) -> None:
             }}
         }}
         </style>
-        """,
-        unsafe_allow_html=True,
+        """
+        ),
     )
 
 
 def brand_mark_svg() -> str:
-    return """
+    return clean_html_markup(
+        """
     <svg class="msa-brand-mark" viewBox="0 0 72 72" role="img" aria-label="Trading for Dummys 101 logo" xmlns="http://www.w3.org/2000/svg">
       <rect x="6" y="6" width="60" height="60" rx="14" fill="#00C805"/>
       <path d="M18 48L30 36L39 42L54 22" fill="none" stroke="#081018" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -3416,10 +3431,12 @@ def brand_mark_svg() -> str:
       <text x="17" y="58" fill="#081018" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="900">101</text>
     </svg>
     """
+    )
 
 
 def ai_companion_svg() -> str:
-    return """
+    return clean_html_markup(
+        """
     <svg class="msa-companion-bot" viewBox="0 0 96 96" role="img" aria-label="Scout AI companion" xmlns="http://www.w3.org/2000/svg">
       <path d="M48 25V14" stroke="#38BDF8" stroke-width="4" stroke-linecap="round"/>
       <circle cx="48" cy="11" r="5" fill="#00C805"/>
@@ -3433,6 +3450,7 @@ def ai_companion_svg() -> str:
       <path d="M32 78H64" stroke="#00C805" stroke-width="2" stroke-linecap="round"/>
     </svg>
     """
+    )
 
 
 def companion_copy(analysis: dict[str, Any] | None = None) -> tuple[str, str, str]:
@@ -3491,7 +3509,8 @@ def companion_copy(analysis: dict[str, Any] | None = None) -> tuple[str, str, st
 
 def companion_card_html(title: str, message: str, chip: str, context: str = "card") -> str:
     safe_context = "".join(ch for ch in str(context).lower() if ch.isalnum() or ch in {"-", "_"}) or "card"
-    return """
+    return clean_html_markup(
+        """
     <div class="msa-companion-card msa-companion-{context}">
       <div class="msa-companion-inner">
         {bot}
@@ -3510,15 +3529,16 @@ def companion_card_html(title: str, message: str, chip: str, context: str = "car
         message=html.escape(message),
         chip=html.escape(chip),
     )
+    )
 
 
 def render_companion_card(analysis: dict[str, Any] | None = None, context: str = "card") -> None:
     title, message, chip = companion_copy(analysis)
-    st.markdown(companion_card_html(title, message, chip, context=context), unsafe_allow_html=True)
+    render_html(companion_card_html(title, message, chip, context=context))
 
 
 def render_sidebar_brand() -> None:
-    st.sidebar.markdown(
+    render_html(
         """
         <div class="msa-sidebar-brand">
           <div class="msa-sidebar-logo">
@@ -3533,7 +3553,7 @@ def render_sidebar_brand() -> None:
             logo=brand_mark_svg(),
             name=html.escape(APP_NAME),
         ),
-        unsafe_allow_html=True,
+        target=st.sidebar,
     )
     with st.sidebar:
         render_companion_card(context="sidebar")
@@ -3541,7 +3561,7 @@ def render_sidebar_brand() -> None:
 
 def dashboard_hero() -> None:
     title, message, chip = companion_copy()
-    st.markdown(
+    render_html(
         f"""
         <div class="msa-hero">
           <div class="msa-hero-grid">
@@ -3565,8 +3585,7 @@ def dashboard_hero() -> None:
             {companion_card_html(title, message, chip, context="hero")}
           </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -3577,7 +3596,7 @@ def status_cards(cards: list[tuple[str, str, str]]) -> None:
             f'<div class="msa-status-card msa-{html.escape(tone)}"><div class="msa-label">{html.escape(label)}</div><div class="msa-value">{html.escape(value)}</div></div>'
         )
     parts.append("</div>")
-    st.markdown("".join(parts), unsafe_allow_html=True)
+    render_html("".join(parts))
 
 
 def header(title: str, subtitle: str | None = None) -> None:
@@ -3591,7 +3610,7 @@ def header(title: str, subtitle: str | None = None) -> None:
 
 
 def compact_header(title: str, subtitle: str | None = None) -> None:
-    st.markdown(
+    render_html(
         """
         <div class="msa-compact-header">
           <h1>{title}</h1>
@@ -3602,7 +3621,6 @@ def compact_header(title: str, subtitle: str | None = None) -> None:
             title=html.escape(title),
             subtitle=f"<p>{html.escape(subtitle)}</p>" if subtitle else "",
         ),
-        unsafe_allow_html=True,
     )
 
 
@@ -3751,7 +3769,7 @@ def render_workflow_cockpit(
     if cockpit["blockers"]:
         blocker_text = " ".join(f"{index}. {item}" for index, item in enumerate(cockpit["blockers"], start=1))
 
-    st.markdown(
+    render_html(
         """
         <div class="msa-cockpit">
           <div class="msa-cockpit-head">
@@ -3777,7 +3795,6 @@ def render_workflow_cockpit(
             steps="".join(step_parts),
             blockers=html.escape(blocker_text),
         ),
-        unsafe_allow_html=True,
     )
 
     url, label, icon = cockpit["next_link"]
@@ -4125,10 +4142,9 @@ def render_ai_plan_ladder(analysis: dict[str, Any], chart_source: str | None = N
             )
         )
     parts.append("</div>")
-    st.markdown("".join(parts), unsafe_allow_html=True)
-    st.markdown(
+    render_html("".join(parts))
+    render_html(
         '<div class="msa-plan-rule"><b>Beginner rule:</b> {rule}</div>'.format(rule=html.escape(rule)),
-        unsafe_allow_html=True,
     )
 
 
@@ -4183,7 +4199,7 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
             st.badge(str(confidence["label"]), icon=":material/verified:", color=str(confidence["color"]))
             st.badge("Paper approval only", icon=":material/edit_note:", color="blue")
 
-        st.markdown(
+        render_html(
             """
             <div class="msa-ai-command msa-ai-{tone}">
                 <div class="msa-ai-header">
@@ -4205,7 +4221,6 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
                 total=total,
                 levels="".join(level_parts),
             ),
-            unsafe_allow_html=True,
         )
 
         render_ai_plan_ladder(analysis, chart_source)
@@ -4213,17 +4228,16 @@ def render_ai_decision_panel(analysis: dict[str, Any], chart_source: str | None 
         now_items = ai_now_steps(analysis, label, status)
         cancel_items = ai_cancel_rules(analysis)
         left, right = st.columns(2)
-        left.markdown(
+        render_html(
             f'<div class="msa-ai-list">{render_html_list("Do this now", now_items)}</div>',
-            unsafe_allow_html=True,
+            target=left,
         )
-        right.markdown(
+        render_html(
             f'<div class="msa-ai-list">{render_html_list("Cancel or wait if", cancel_items)}</div>',
-            unsafe_allow_html=True,
+            target=right,
         )
-        st.markdown(
+        render_html(
             f'<div class="msa-ai-plain">{html.escape(beginner_trade_translation(analysis, label))}</div>',
-            unsafe_allow_html=True,
         )
         st.caption("Educational paper-trading decision aid. It does not place real trades and it is not financial advice.")
 
@@ -4294,8 +4308,8 @@ def render_trade_readiness_panel(analysis: dict[str, Any]) -> None:
 
     with st.container(border=True):
         st.markdown("**Trade readiness**")
-        st.markdown("".join(command), unsafe_allow_html=True)
-        st.markdown("".join(check_parts), unsafe_allow_html=True)
+        render_html("".join(command))
+        render_html("".join(check_parts))
 
 
 def render_training_progress_panel() -> None:
@@ -4663,7 +4677,7 @@ def render_market_pulse(df: pd.DataFrame, context: str = "market", show_actions:
     stats_html.append("</div>")
     flags = " ".join(f"{index}. {item}" for index, item in enumerate(pulse["flags"], start=1))
 
-    st.markdown(
+    render_html(
         """
         <div class="msa-pulse">
           <div class="msa-pulse-head">
@@ -4691,7 +4705,6 @@ def render_market_pulse(df: pd.DataFrame, context: str = "market", show_actions:
             flags=html.escape(flags),
             source_line=html.escape(str(pulse["source_line"])),
         ),
-        unsafe_allow_html=True,
     )
 
     if show_actions:
@@ -5194,7 +5207,7 @@ def render_premium_trade_ticket(analysis: dict[str, Any]) -> None:
                 )
             )
         card_parts.append("</div>")
-        st.markdown("".join(card_parts), unsafe_allow_html=True)
+        render_html("".join(card_parts))
         cols = st.columns(3)
         cols[0].metric("Distance to entry", pct(distance) if distance is not None else "wait", border=True)
         cols[1].metric("Target 1 R:R", f"{risk_reward:.2f}R" if risk_reward is not None else "n/a", border=True)
@@ -6953,7 +6966,7 @@ def render_candlestick_chart(
                 )
             )
         parts.append("</div>")
-        st.markdown("".join(parts), unsafe_allow_html=True)
+        render_html("".join(parts))
 
     candle_size = 16 if len(chart_df) <= 90 else 12 if len(chart_df) <= 180 else 8 if len(chart_df) <= 390 else 4
     if chart_engine == "TradingView-style":
