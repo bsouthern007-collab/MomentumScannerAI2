@@ -2771,26 +2771,66 @@ def data_health_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     for _, row in df.iterrows():
         raw = row.to_dict()
-        label = str(raw.get("Data confidence") or data_confidence_summary(raw).get("label", "n/a"))
+        stored_label = raw.get("Data confidence")
+        label = "" if pd.isna(stored_label) else str(stored_label).strip()
+        if not label or label.lower() in {"n/a", "nan", "none"}:
+            label = str(data_confidence_summary(raw).get("label", "n/a"))
         if label not in counts:
             label = "Practice only" if "practice" in label.lower() else "Verify first"
         counts[label] += 1
     return pd.DataFrame([{"Label": label, "Rows": count} for label, count in counts.items()])
 
 
+def data_source_mix(df: pd.DataFrame, limit: int = 3) -> str:
+    if df.empty or "Data source" not in df.columns:
+        return "No source rows yet"
+    sources = df["Data source"].fillna("Unknown").astype(str).str.strip()
+    sources = sources.replace({"": "Unknown", "nan": "Unknown", "None": "Unknown"})
+    counts = sources.value_counts().head(limit)
+    if counts.empty:
+        return "No source rows yet"
+    return ", ".join(f"{source}: {int(count)}" for source, count in counts.items())
+
+
 def render_data_health_summary(df: pd.DataFrame) -> None:
     health = data_health_frame(df)
     total = int(health["Rows"].sum()) if not health.empty else 0
     values = {str(row["Label"]): int(row["Rows"]) for _, row in health.iterrows()}
+    trusted_total = values.get("High confidence", 0) + values.get("Usable for paper", 0)
+    verify_total = values.get("Verify first", 0)
+    practice_data = values.get("Practice data", 0)
+    practice_only = values.get("Practice only", 0)
+    practice_total = practice_data + practice_only
+    trusted_pct = (trusted_total / total) if total else 0.0
     with st.container(border=True):
         st.markdown("**Data health**")
-        st.caption("Use this before trusting any scanner result. Cleaner data can still be delayed, but verify-first and practice rows need extra caution.")
+        st.caption("Use this before trusting any scanner result. It shows whether the gameplan is using cleaner live rows, verify-first rows, or practice fallback rows.")
         cols = st.columns(4)
-        cols[0].metric("High confidence", str(values.get("High confidence", 0)), border=True)
-        cols[1].metric("Usable for paper", str(values.get("Usable for paper", 0)), border=True)
-        cols[2].metric("Verify first", str(values.get("Verify first", 0)), border=True)
-        practice_total = values.get("Practice data", 0) + values.get("Practice only", 0)
-        cols[3].metric("Practice only", str(practice_total), f"{total} total rows", border=True)
+        cols[0].metric("Rows checked", str(total), border=True)
+        cols[1].metric("Usable rows", str(trusted_total), f"{trusted_pct:.0%} trusted", border=True)
+        cols[2].metric("Verify first", str(verify_total), border=True)
+        cols[3].metric("Practice rows", str(practice_total), f"{practice_data} fallback / {practice_only} weak", border=True)
+
+        if total == 0:
+            st.warning("No scanner rows are loaded yet. Run or refresh the scan to build the health readout.", icon=":material/warning:")
+        elif practice_total == total:
+            st.warning(
+                "This gameplan is using practice fallback rows right now. It is useful for learning the workflow, but verify a live quote before trusting a paper setup.",
+                icon=":material/model_training:",
+            )
+        elif trusted_total == 0:
+            st.warning("No rows are clean enough to trust without another source check yet.", icon=":material/warning:")
+        elif verify_total or practice_total:
+            st.info("Some rows need another quote/news check before you use them for paper trading.", icon=":material/info:")
+        else:
+            st.success("All displayed rows are in the cleaner data buckets for paper practice.", icon=":material/verified:")
+
+        st.progress(float(trusted_pct))
+        bucket_text = (
+            f"Buckets: high {values.get('High confidence', 0)}, usable {values.get('Usable for paper', 0)}, "
+            f"verify {verify_total}, practice {practice_total}."
+        )
+        st.caption(f"Sources: {data_source_mix(df)}. {bucket_text}")
 
 
 def provider_status_items() -> list[dict[str, str]]:

@@ -12,6 +12,10 @@ def main() -> None:
     scan = app.run_scan(2, 20, 10, 10, 3, prefer_live=False, include_learning=True)
     assert not scan.empty, "scanner should return learning candidates"
     assert {"Ticker", "AI score", "Buy zone", "Entry trigger", "Playbook fit", "Status"}.issubset(scan.columns)
+    health = app.data_health_frame(scan)
+    assert int(health["Rows"].sum()) == len(scan)
+    assert health["Rows"].max() > 0
+    assert app.data_source_mix(scan) != "No source rows yet"
 
     analysis = app.analyze_ticker("SOUN", prefer_live=False)
     assert analysis["AI score"] > 0
